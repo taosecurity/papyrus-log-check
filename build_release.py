@@ -7,8 +7,9 @@
                                              VERSION and that CHANGELOG.md has a dated entry for it
 
 Also writes build/release-notes.md (the CHANGELOG entry), used as the GitHub release text.
-The zip holds one folder, papyrus-log-check-<version>/, with fixed file times, so the same sources
-give the same zip.
+The zip holds one folder, papyrus-log-check-<version>/, with fixed file times, the same "made on"
+system (Unix) for every entry and LF line endings, so the same sources give the same zip on Windows
+and Linux.
 """
 import argparse
 import hashlib
@@ -66,8 +67,9 @@ def main():
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
         for rel in sorted(FILES):
             with open(os.path.join(HERE, rel), "rb") as f:
-                data = f.read()
+                data = f.read().replace(b"\r\n", b"\n")   # a Windows checkout may have CRLF; git holds LF
             info = zipfile.ZipInfo(f"{top}/{rel}", FIXED_TIME)
+            info.create_system = 3   # Unix, on every OS (Python sets 0 on Windows, which changed the zip's bytes)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             z.writestr(info, data)

@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.2.1 (not yet released)
+## 0.2.1 (2026-11-09)
 
 - A PRIVACY.md file says what the tool reads and writes, and that it makes no network connections. It is in the
   release zip.
+- The release zip is now the same, byte for byte, whether it is built on Windows or Linux, so anyone can rebuild it
+  and compare the checksum.
 
 ## 0.2.0 (2026-11-09)
 

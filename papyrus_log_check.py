@@ -33,7 +33,7 @@ import sys
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 PASS, FAIL, NOT_SEEN, NOT_LOADED = "PASS", "FAIL", "NOT SEEN", "NOT LOADED"
 
