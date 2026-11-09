@@ -1,0 +1,25 @@
+{
+  "mod": "Example Beacon",
+  "version": "1.0.0",
+  "plugins": ["ExampleBeacon.esm"],
+  "names": ["ExampleBeacon", "beacon"],
+  "prefix": "\\[EXB\\]",
+  "scripts": "^EXB_|\\bEXB_",
+  "expect": [
+    {"id": "started", "re": "\\[EXB\\] quest started, version {version}", "always": true,
+     "show": "[EXB] quest started, version …",
+     "means": "Written at every new game and every load. Missing = the mod's quest never ran."},
+    {"id": "beacon-placed", "re": "\\[EXB\\] beacon placed at ",
+     "means": "The player used the beacon item."},
+    {"id": "beacon-removed", "re": "\\[EXB\\] beacon removed",
+     "means": "The player picked the beacon up again."}
+  ],
+  "order": [["started", "beacon-placed"]],
+  "forbid": [
+    {"id": "no-double-start", "re": "\\[EXB\\] WARNING: started twice",
+     "means": "Two copies of the mod are active."}
+  ],
+  "ignore": [
+    {"re": "Cannot call Delete\\(\\) on a None object", "why": "the marker is already gone on cleanup; harmless"}
+  ]
+}

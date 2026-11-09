@@ -1,0 +1,9 @@
+[11/01/2026 - 09:00:00PM] Papyrus log opened (PC-64)
+[21:00:04] [EXB] quest started, version 1.0.0
+[21:02:31] [EXB] beacon placed at 120.5, -44.0, 3.2
+[21:03:10] error: Cannot call Delete() on a None object, aborting function call
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.Cleanup() - "EXB_BeaconScript.psc" Line 58
+[21:03:12] warning: Property SomeVanillaThing on script SomeOtherScript attached to (00012345) cannot be initialized because the script no longer contains that property
+[21:05:00] VM is freezing...
+[21:05:00] VM is frozen
