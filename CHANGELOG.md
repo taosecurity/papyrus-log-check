@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (not yet released)
+## 0.2.0 (2026-11-09)
 
 First public release.
 
