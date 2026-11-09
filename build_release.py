@@ -38,7 +38,7 @@ def changelog_entry(version):
     """(heading, body) of the CHANGELOG entry for this version."""
     with open(os.path.join(HERE, "CHANGELOG.md"), encoding="utf-8") as f:
         text = f.read()
-    m = re.search(rf"^## {re.escape(version)}\b(.*)$\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    m = re.search(rf"^## {re.escape(version)}\b([^\n]*)\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     if not m:
         raise SystemExit(f"CHANGELOG.md has no entry for {version}")
     return m.group(1).strip(), m.group(2).strip()
