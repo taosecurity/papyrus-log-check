@@ -8,7 +8,7 @@
   "expect": [
     {"id": "started", "re": "\\[EXB\\] quest started, version {version}", "always": true,
      "show": "[EXB] quest started, version …",
-     "means": "Written at every new game and every load. Missing = the mod's quest never ran."},
+     "means": "The mod writes this line at every new game and every load. If it is missing, the mod's quest never ran."},
     {"id": "beacon-placed", "re": "\\[EXB\\] beacon placed at ",
      "means": "The player used the beacon item."},
     {"id": "beacon-removed", "re": "\\[EXB\\] beacon removed",
@@ -20,6 +20,6 @@
      "means": "Two copies of the mod are active."}
   ],
   "ignore": [
-    {"re": "Cannot call Delete\\(\\) on a None object", "why": "the marker is already gone on cleanup; harmless"}
+    {"re": "Cannot call Delete\\(\\) on a None object", "why": "The marker is already gone on cleanup, so this error is harmless."}
   ]
 }

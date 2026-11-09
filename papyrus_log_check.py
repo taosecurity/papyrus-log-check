@@ -72,13 +72,13 @@ class Package:
                     norm = os.path.relpath(full, path).replace("\\", "/")
                     self.entries[norm.lower()] = (full, norm)
         elif not os.path.isfile(path):
-            raise FileNotFoundError(f"not found: {path}")
+            raise FileNotFoundError(f"{path} was not found.")
         elif path.lower().endswith(".zip") or zipfile.is_zipfile(path):
             self.kind = ZIP
             try:
                 self.zf = zipfile.ZipFile(path)
             except zipfile.BadZipFile as e:
-                raise ValueError(f"{self.name}: not a readable zip ({e})")
+                raise ValueError(f"{self.name} is not a readable zip ({e}).")
             for info in self.zf.infolist():
                 if info.is_dir():
                     continue
@@ -245,12 +245,12 @@ def load_rules(path):
         r = json.load(f)
     for key in ("mod", "prefix"):
         if key not in r:
-            raise ValueError(f"{path}: missing '{key}'")
+            raise ValueError(f"{path} has no '{key}' field.")
     r.setdefault("plugins", [])
     r.setdefault("dlls", [])
     r.setdefault("logs", [])
     if not r["plugins"] and not r["dlls"]:
-        raise ValueError(f"{path}: needs 'plugins' (.esm) or 'dlls' (SFSE plugin DLLs)")
+        raise ValueError(f"{path} needs 'plugins' (.esm files) or 'dlls' (SFSE plugin DLLs).")
     r.setdefault("version", "")
     r.setdefault("names", [])
     r.setdefault("scripts", "")
@@ -270,7 +270,7 @@ def compile_re(pattern, rules, where):
     try:
         return re.compile(fill(pattern, rules))
     except re.error as e:
-        raise ValueError(f"{rules['_path']}: bad regex in {where}: {e}")
+        raise ValueError(f"{rules['_path']} has a bad regex in {where}: {e}.")
 
 
 def find_rule_files(root, mods=None):
@@ -281,7 +281,7 @@ def find_rule_files(root, mods=None):
         for m in mods:
             p = m if m.lower().endswith(".json") else os.path.join(root, m, "testplan", "logrules.json")
             if not os.path.isfile(p):
-                raise FileNotFoundError(f"no rule file for '{m}' (looked for {p})")
+                raise FileNotFoundError(f"There is no rule file for '{m}' (it looked for {p}).")
             out.append(p)
         return out
     out = []
@@ -449,7 +449,7 @@ def check_mod(rules, pkg, blocks, keep=50):
     for seq in rules["order"]:
         unknown = [x for x in seq if x not in known]
         if unknown:
-            raise ValueError(f"{rules['_path']}: order names unknown expect ids {unknown}")
+            raise ValueError(f"{rules['_path']} has an order rule that names unknown expect ids {unknown}.")
         missing = [x for x in seq if x not in first_pos]
         if missing:
             status, detail = NOT_SEEN, "not all seen: " + ", ".join(missing)
@@ -568,7 +568,7 @@ def text_report(data, max_lines):
     for log in p["logs"]:
         out.append(f"  {log['name']}: {log['count']} lines, {log['first']} to {log['last']}")
     if p["plugins_txt"] is False:
-        out.append("  No plugins.txt: plugin checks skipped, every rule file is checked.")
+        out.append("  There is no plugins.txt, so plugin checks are skipped and every rule file is checked.")
     out.append("")
     out.append("Summary")
     for r in data["mods"]:
@@ -583,21 +583,21 @@ def text_report(data, max_lines):
         out.append(f"== {r['mod']} {r['version']}: {r['status']}")
         out.append(f"   Rules: {r['rules_file']}")
         if r["rule_file_version"] != r["version"]:
-            out.append(f"   Checked as version {r['version']} (--set-version; the rule file is for {r['rule_file_version']})")
+            out.append(f"   This mod was checked as version {r['version']} (--set-version); the rule file is for {r['rule_file_version']}.")
         out.append(f"   Plugin: {', '.join(r['plugins'])} ({r['plugin_state']})")
         if r["logs"] != ["Papyrus logs"]:
-            out.append(f"   Log checked: {', '.join(r['logs'])}" + (" (not found)" if r.get("logs_missing") else ""))
+            out.append(f"   Log checked: {', '.join(r['logs'])}" + (" (it is not in the input)" if r.get("logs_missing") else ""))
         if r["status"] == NOT_LOADED:
-            out.append("   Not active in plugins.txt; rules not checked.")
+            out.append("   The plugin is not active in plugins.txt, so its rules were not checked.")
             out.append("")
             continue
         if r["prefix_lines"]:
             out.append(f"   Mod log lines: {r['prefix_lines']} (first {r['first_prefix']['log']}:{r['first_prefix']['line']}, "
                        f"last {r['last_prefix']['log']}:{r['last_prefix']['line']})")
         else:
-            out.append("   Mod log lines: none (the mod never logged: feature probably not tested, or logging is off)")
+            out.append("   Mod log lines: none. The mod never logged, so its features were probably not tested, or logging is off.")
             if r["status"] == NOT_SEEN:
-                out.append(f"   All {len(r['rules'])} rules NOT SEEN; no errors from its scripts.")
+                out.append(f"   All {len(r['rules'])} rules are NOT SEEN, and its scripts logged no errors.")
                 out.append("")
                 continue
         for x in r["rules"]:
@@ -624,22 +624,23 @@ def text_report(data, max_lines):
             if x.get("count", 0) > len(shown):
                 out.append(f"             ... and {x['count'] - len(shown)} more")
             if x.get("other_version_lines"):
-                out.append(f"             Found with another version (wrong build installed?):")
+                out.append("             The same line was found with another version (was a different build installed?):")
                 for ln in x["other_version_lines"][:max_lines]:
                     out.append(f"             {fmt_line(ln)}")
         out.append("")
     out.append("Package checks")
     if not data["flags"]:
-        out.append("  No crash logs, Windows crash events or suspended stacks.")
+        out.append("  The input has no crash logs, Windows crash events or suspended stacks.")
     for f in data["flags"]:
         out.append(f"  FLAG {f['kind']}: {f['text']}")
     for i in data["other_errors"]:
         out.append(f"  Info: {i['log']} has {i['error']} error(s) and {i['warning']} warning(s) from other scripts "
-                   f"(vanilla or other mods; not counted)")
+                   f"(the base game or other mods). They are not counted.")
     out.append("")
-    out.append("PASS = seen as expected. FAIL = a required line missing, a forbidden line seen, lines out of order,")
-    out.append("or a Papyrus error naming the mod's scripts. NOT SEEN = no matching line; usually the feature")
-    out.append("wasn't tested. This report is a helper for reading the logs, not a verdict.")
+    out.append("PASS means a line was seen as expected. FAIL means a required line is missing, a forbidden line")
+    out.append("was seen, lines are out of order, or a Papyrus error names the mod's scripts. NOT SEEN means no")
+    out.append("line matched, which usually means the feature wasn't tested. This report helps you read the logs;")
+    out.append("it is not a verdict.")
     return "\n".join(out) + "\n"
 
 
@@ -649,7 +650,7 @@ def newest_zip(folder):
     """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time."""
     zips = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".zip")]
     if not zips:
-        raise FileNotFoundError(f"no .zip in {folder}")
+        raise FileNotFoundError(f"There is no .zip in {folder}.")
 
     def key(p):
         m = STAMP_RE.search(os.path.basename(p))
@@ -663,29 +664,29 @@ def run(args):
     if not zpath:
         logs_dir = args.logs_dir or os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
         if not logs_dir:
-            raise ValueError("give a log file, a folder or a zip, or --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS")
+            raise ValueError("Give a log file, a folder or a zip, or use --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS.")
         zpath = newest_zip(logs_dir)
     pkg = Package(zpath)
     if not pkg.logs:
-        raise ValueError(f"{pkg.name}: no Papyrus.N.log found (a single log file with any name can be given directly)")
+        raise ValueError(f"No Papyrus.N.log was found in {pkg.name}. (You can also give a single log file with any name.)")
 
     explicit_rules = split_list(args.rules)
     mods = split_list([args.mods]) if args.mods else None
     for p in explicit_rules:
         if not os.path.isfile(p):
-            raise FileNotFoundError(f"rule file not found: {p}")
+            raise FileNotFoundError(f"The rule file {p} was not found.")
     rule_files = list(explicit_rules)
     if mods or not explicit_rules:
         rule_files += find_rule_files(root, mods)
     if not rule_files:
-        raise ValueError(f"no rule files: give --rules FILE, or keep <project>\\testplan\\logrules.json under --root ({root})")
+        raise ValueError(f"No rule files were found. Give --rules FILE, or keep <project>\\testplan\\logrules.json under --root ({root}).")
     explicit = bool(explicit_rules or mods)
     rules_list = [load_rules(p) for p in rule_files]
     overrides = {}
     for s in args.set_version or []:
         name, _, ver = s.partition("=")
         if not ver:
-            raise ValueError(f"--set-version needs Mod=version, got '{s}'")
+            raise ValueError(f"--set-version needs Mod=version, but it got '{s}'.")
         overrides[name.strip().lower()] = ver.strip()
     used = set()
     for path, r in zip(rule_files, rules_list):
@@ -698,7 +699,7 @@ def run(args):
                 used.add(key)
     unused = set(overrides) - used
     if unused:
-        raise ValueError(f"--set-version names no checked mod: {', '.join(sorted(unused))}")
+        raise ValueError(f"--set-version names a mod that wasn't checked: {', '.join(sorted(unused))}.")
 
     blocks = error_blocks(pkg)
     results = [check_mod(r, pkg, blocks) for r in rules_list]
@@ -755,22 +756,28 @@ def run(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog=TOOL, description="Check Starfield Papyrus logs against per-mod rule files.")
+    ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
-                    help="a Papyrus log file, a folder with Papyrus.N.log files, or a zip of them "
-                         "(default: the newest zip in --logs-dir)")
+                    help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
+                         "Without it, the newest zip in --logs-dir is checked.")
     ap.add_argument("--rules", action="append", metavar="FILE",
-                    help="a rule file to check against (repeat, or give a comma list); "
-                         "without --rules or --mods, rule files are searched under --root")
-    ap.add_argument("--logs-dir", help="folder with log zips; the newest is checked (or env PAPYRUS_LOG_CHECK_LOGS)")
-    ap.add_argument("--root", default=".",
-                    help="folder holding mod project folders with <project>\\testplan\\logrules.json (default: current folder)")
-    ap.add_argument("--mods", help="comma-separated project folder names under --root, or rule file paths")
-    ap.add_argument("--out", help="output folder (default: out\\ next to this script)")
-    ap.add_argument("--max-lines", type=int, default=5, help="matching lines shown per rule in the text report")
+                    help="This names a rule file to check against. Repeat it, or give a comma list. "
+                         "Without --rules or --mods, rule files are searched for under --root.")
+    ap.add_argument("--logs-dir", metavar="FOLDER",
+                    help="This folder holds log zips, and the newest one is checked. "
+                         "The environment variable PAPYRUS_LOG_CHECK_LOGS does the same.")
+    ap.add_argument("--root", default=".", metavar="FOLDER",
+                    help="This folder holds mod project folders with <project>\\testplan\\logrules.json. "
+                         "The default is the current folder.")
+    ap.add_argument("--mods", metavar="A,B",
+                    help="This lists project folder names under --root, or rule file paths, separated by commas.")
+    ap.add_argument("--out", metavar="FOLDER",
+                    help="This sets the output folder. The default is out\\ next to this script.")
+    ap.add_argument("--max-lines", type=int, default=5, metavar="N",
+                    help="This sets how many matching lines the text report shows per rule.")
     ap.add_argument("--set-version", action="append", metavar="MOD=VERSION",
-                    help="check a mod against another version than its rule file says (project folder or mod name); "
-                         "for rechecking older logs. Can be repeated.")
+                    help="This checks a mod (project folder or mod name) as another version than its rule file says, "
+                         "for rechecking older logs. You can repeat it.")
     ap.add_argument("--version", action="version", version=f"{TOOL} {VERSION}")
     args = ap.parse_args(argv)
     try:
