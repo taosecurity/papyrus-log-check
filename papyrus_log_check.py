@@ -87,7 +87,7 @@ class Package:
         else:
             self.kind = LOG_FILE
             self.entries[self.name.lower()] = (path, self.name)
-        self.manifest = self._json("manifest.json") or {}
+        self.manifest = self._collector_manifest()
         self.plugins = self._plugins()
         self.logs = self._papyrus_logs()
         self.sha256 = self._sha256()
@@ -133,6 +133,12 @@ class Package:
             return json.loads(self.text(name))
         except ValueError:
             return None
+
+    def _collector_manifest(self):
+        """A log collector's manifest.json at the top level, or {}. A manifest.json without a 'tool' field
+        belongs to something else and is ignored."""
+        m = self._json("manifest.json")
+        return m if isinstance(m, dict) and m.get("tool") else {}
 
     def _find(self, basename):
         keys = [k for k in self.entries if os.path.basename(k) == basename]

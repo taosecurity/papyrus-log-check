@@ -175,6 +175,14 @@ Warnings naming the mod's scripts are listed but don't fail the mod. Errors from
 FLAG lines at the end aren't tied to one mod: crash logs in the input and suspended-stack lines
 (the Papyrus engine falling behind).
 
+## Privacy
+
+It runs offline and only reads the files you give it. It writes nothing but its two report
+files. It never looks up your user name, computer name or anything else about your PC.
+
+Reports quote lines from your logs (and, if your log zip has a collector's manifest, its user
+and computer names), so read a report before you post it.
+
 ## Tests
 
 ```

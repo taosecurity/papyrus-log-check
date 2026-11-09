@@ -303,6 +303,17 @@ class TestPlainInput(Base):
         self.assertEqual(strip(from_folder["mods"][0]), strip(from_zip["mods"][0]))
         self.assertEqual(from_folder["mods"][0]["status"], plc.FAIL)
 
+    def test_unrelated_manifest_is_ignored(self):
+        folder = make_folder(os.path.join(self.dir, "logs"))
+        with open(os.path.join(folder, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump({"name": "something else", "note": "TestMod", "warnings": ["x"], "created": "2020-01-01T00:00:00"}, f)
+        pkg = plc.Package(folder)
+        self.assertEqual(pkg.manifest, {})
+        self.assertNotEqual(pkg.stamp(), "20200101-000000")
+        _, data = self.run_main(folder, "--rules", self.rules_file())
+        self.assertEqual(data["package"]["manifest"], {})
+        self.assertNotIn("collector warning", {f["kind"] for f in data["flags"]})
+
     def test_folder_sha_changes_with_log(self):
         folder = make_folder(os.path.join(self.dir, "logs"))
         a = plc.Package(folder).sha256
