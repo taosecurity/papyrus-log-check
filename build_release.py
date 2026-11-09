@@ -19,7 +19,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = [
-    "papyrus_log_check.py", "README.md", "LICENSE", "CHANGELOG.md",
+    "papyrus_log_check.py", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
     "examples/example-beacon.logrules.json", "examples/Papyrus.0.log",
     "tests/test_papyrus_log_check.py",
 ]

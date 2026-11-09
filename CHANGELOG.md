@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (not yet released)
+
+- A PRIVACY.md file says what the tool reads and writes, and that it makes no network connections. It is in the
+  release zip.
+
 ## 0.2.0 (2026-11-09)
 
 This is the first public release.
