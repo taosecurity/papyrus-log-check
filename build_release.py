@@ -8,23 +8,41 @@
 
 Also writes build/release-notes.md (the CHANGELOG entry), used as the GitHub release text.
 The zip holds one folder, papyrus-log-check-<version>/, with fixed file times, the same "made on"
-system (Unix) for every entry and LF line endings, so the same sources give the same zip on Windows
-and Linux.
+system (Unix) for every entry, regular-file mode 0644, and no compression (stored), so the same
+sources give the same zip on any system and any zlib. The files come from the commit (git show
+HEAD:<file>), so uncommitted edits never reach a zip; a working tree with changes to the shipped files
+is refused (--allow-dirty builds from the files on disk instead, for trying things out). CI builds the
+zip on Windows and Linux and checks that the two checksums match.
 """
 import argparse
 import hashlib
 import os
 import re
+import subprocess
 import sys
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = [
-    "papyrus_log_check.py", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
+    "papyrus_log_check.py", "README.md", "AGENTS.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
     "examples/example-beacon.logrules.json", "examples/Papyrus.0.log",
     "tests/test_papyrus_log_check.py",
 ]
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", HERE, *args], capture_output=True, check=True).stdout
+
+
+def committed(rel):
+    """The file as committed (LF line endings, as .gitattributes stores it)."""
+    return git("show", f"HEAD:{rel}")
+
+
+def dirty_files():
+    out = git("status", "--porcelain", "--", *FILES).decode("utf-8", "replace")
+    return [line[3:] for line in out.splitlines() if line.strip()]
 
 
 def script_version():
@@ -48,7 +66,16 @@ def changelog_entry(version):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", help="the git tag being released, e.g. v0.2.0")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="build from the files on disk, uncommitted changes included (never for a release)")
     args = ap.parse_args()
+    if args.allow_dirty and args.tag:
+        raise SystemExit("--allow-dirty can't be used with --tag: a release is built from the commit")
+    if not args.allow_dirty:
+        dirty = dirty_files()
+        if dirty:
+            raise SystemExit("these shipped files have uncommitted changes: " + ", ".join(dirty) +
+                             ". Commit them first (or use --allow-dirty to try a build).")
 
     version = script_version()
     heading, notes = changelog_entry(version)
@@ -64,14 +91,17 @@ def main():
     os.makedirs(build, exist_ok=True)
     top = f"papyrus-log-check-{version}"
     zpath = os.path.join(dist, top + ".zip")
-    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
         for rel in sorted(FILES):
-            with open(os.path.join(HERE, rel), "rb") as f:
-                data = f.read().replace(b"\r\n", b"\n")   # a Windows checkout may have CRLF; git holds LF
+            if args.allow_dirty:
+                with open(os.path.join(HERE, rel), "rb") as f:
+                    data = f.read()
+            else:
+                data = committed(rel)
             info = zipfile.ZipInfo(f"{top}/{rel}", FIXED_TIME)
             info.create_system = 3   # Unix, on every OS (Python sets 0 on Windows, which changed the zip's bytes)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
+            info.compress_type = zipfile.ZIP_STORED   # no zlib: its output differs between builds and systems
+            info.external_attr = 0o100644 << 16       # a regular file, rw-r--r--
             z.writestr(info, data)
     with open(zpath, "rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()

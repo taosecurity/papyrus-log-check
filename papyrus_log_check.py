@@ -30,10 +30,16 @@ import json
 import os
 import re
 import sys
+import traceback
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.2.1"
+VERSION = "0.3.0"
+# Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
+AUTHOR = "Richard Bejtlich"
+LICENSE_NAME = "MIT"
+URL = "https://github.com/taosecurity/papyrus-log-check"
+BYLINE = f"{TOOL} {VERSION} by {AUTHOR} - {LICENSE_NAME} - {URL}"
 
 PASS, FAIL, NOT_SEEN, NOT_LOADED = "PASS", "FAIL", "NOT SEEN", "NOT LOADED"
 
@@ -47,8 +53,88 @@ EVENT_HEAD_RE = re.compile(r"^====\s+(\S+)\s+(.+?)\s+ID\s+(\d+)\s*$")
 
 ZIP, FOLDER, LOG_FILE = "zip", "folder", "log file"
 
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def safe(text):
+    """Text from logs, rule files and manifests with control characters shown as \\xNN, so escape codes hidden in
+    an input can't fake lines or change the terminal (2026-11-16 security review). Tabs and line breaks stay."""
+    return _CONTROL_RE.sub(lambda m: f"\\x{ord(m.group(0)):02X}", str(text))
+
+
+class Log:
+    """The troubleshooting log (0.3.0): what was read, what was decided and why a run stopped. Off unless asked for:
+    --verbose prints it on stderr ("log: ..."), --log FILE writes it to FILE. The report and the summary on stdout
+    are the same with or without it."""
+    to_stderr = False
+    file = None
+
+    @classmethod
+    def on(cls):
+        return cls.to_stderr or cls.file is not None
+
+    @classmethod
+    def write(cls, text):
+        if not cls.on():
+            return
+        for line in str(text).splitlines() or [""]:
+            line = safe(line)
+            if cls.to_stderr:
+                print(f"log: {line}", file=sys.stderr)
+            if cls.file is not None:
+                try:
+                    cls.file.write(f"{datetime.datetime.now():%H:%M:%S}  {line}\n")
+                    cls.file.flush()
+                except OSError as e:  # a log that stops working must not stop the check
+                    cls.file = None
+                    print(f"{TOOL}: stopped writing the log file: {e}", file=sys.stderr)
+
+    @classmethod
+    def open(cls, path, inputs):
+        """Opens the log file, refusing one that would overwrite an input (a Papyrus log, the zip, a rule file)."""
+        full = os.path.abspath(path)
+        base = os.path.basename(full).lower()
+        for i in inputs:
+            i = os.path.abspath(i)
+            if full == i or (os.path.isdir(i) and full.startswith(os.path.join(i, ""))):
+                raise ValueError(f"--log {path} is inside the input {i}; give the log a place of its own, e.g. --log papyrus-log-check.log.txt")
+        if PAPYRUS_RE.search(base) or base.endswith((".zip", ".json", ".esm", ".esp", ".esl")):
+            raise ValueError(f"--log {path} looks like an input file; give it a .txt name, e.g. --log papyrus-log-check.log.txt")
+        folder = os.path.dirname(full)
+        if not os.path.isdir(folder):
+            raise ValueError(f"--log {path}: the folder {folder} doesn't exist. Make it, or give --log a path in a folder that exists.")
+        cls.file = open(full, "w", encoding="utf-8")
+
+    @classmethod
+    def close(cls):
+        if cls.file is not None:
+            try:
+                cls.file.close()
+            except OSError:
+                pass
+            cls.file = None
+
 
 # ----------------------------------------------------------------------------- input
+
+def clean_manifest(m):
+    """A collector manifest with every field in the shape the report expects; a field of another shape is dropped
+    (and logged), so a damaged or hand-made manifest.json can't crash the run."""
+    shapes = {"window": dict, "listing": dict, "versions": dict, "warnings": list}
+    out = {}
+    for k, v in m.items():
+        want = shapes.get(k)
+        if want is not None and not isinstance(v, want):
+            Log.write(f"manifest.json: '{k}' should be a {want.__name__}, not {type(v).__name__}; ignored")
+            continue
+        if k in ("created", "user", "computer", "note", "tool") and v is not None and not isinstance(v, str):
+            v = str(v)
+        out[k] = v
+    if "listing" in out and not isinstance(out["listing"].get("sfsePluginDlls", []), list):
+        Log.write("manifest.json: listing.sfsePluginDlls should be a list; ignored")
+        out["listing"] = {}
+    return out
+
 
 def _by_depth(keys):
     """Shallowest path first, then alphabetical."""
@@ -91,6 +177,8 @@ class Package:
         self.plugins = self._plugins()
         self.logs = self._papyrus_logs()
         self.sha256 = self._sha256()
+        Log.write(f"input: {self.kind} {path}: {len(self.entries)} files, {len(self.logs)} Papyrus log(s), "
+                  f"plugins.txt {'found' if self.plugins is not None else 'none'}, manifest {'found' if self.manifest else 'none'}")
 
     def _raw(self, key):
         if self.zf is not None:
@@ -110,8 +198,9 @@ class Package:
                 pass
         return raw.decode("utf-8", errors="replace")
 
-    def _sha256(self):
-        """A zip or log file: the file's hash. A folder: one hash over the logs and plugins.txt that were read."""
+    def _sha256(self, extra_names=()):
+        """A zip or log file: the file's hash. A folder: one hash over the logs, plugins.txt and any other log
+        files the rule files name (their 'logs') that were read."""
         h = hashlib.sha256()
         if self.kind != FOLDER:
             with open(self.path, "rb") as f:
@@ -121,7 +210,9 @@ class Package:
         used = [log["path"].lower() for log in self.logs]
         if self._plugins_key:
             used.append(self._plugins_key)
-        for key in sorted(used):
+        want = {n.lower() for n in extra_names}
+        used += [k for k in self.entries if os.path.basename(k) in want]
+        for key in sorted(set(used)):
             h.update(self.entries[key][1].encode("utf-8") + b"\0")
             h.update(self._raw(self.entries[key][0]))
         return h.hexdigest()
@@ -138,7 +229,9 @@ class Package:
         """A log collector's manifest.json at the top level, or {}. A manifest.json without a 'tool' field
         belongs to something else and is ignored."""
         m = self._json("manifest.json")
-        return m if isinstance(m, dict) and m.get("tool") else {}
+        if not (isinstance(m, dict) and m.get("tool")):
+            return {}
+        return clean_manifest(m)
 
     def _find(self, basename):
         keys = [k for k in self.entries if os.path.basename(k) == basename]
@@ -189,7 +282,7 @@ class Package:
     def sfse_dlls(self):
         """SFSE plugin DLL names (lower case): from a collector's manifest listing, else the .dll files in the
         folder or zip. None when neither says anything."""
-        listing = (self.manifest.get("listing") or {}).get("sfsePluginDlls")
+        listing = self.manifest.get("listing", {}).get("sfsePluginDlls")
         if listing is not None:
             return {str(d.get("name", "")).lower() for d in listing if isinstance(d, dict)}
         dlls = {os.path.basename(k) for k in self.entries if k.endswith(".dll")}
@@ -242,15 +335,20 @@ class Package:
 
 def load_rules(path):
     with open(path, encoding="utf-8-sig") as f:
-        r = json.load(f)
+        try:
+            r = json.load(f)
+        except ValueError as e:
+            raise ValueError(f"{path} is not valid JSON ({e}). Check its commas and quotes.")
+    if not isinstance(r, dict):
+        raise ValueError(f"{path} should hold one JSON object {{...}} with 'mod', 'prefix' and the rules, not a {type(r).__name__}.")
     for key in ("mod", "prefix"):
         if key not in r:
             raise ValueError(f"{path} has no '{key}' field.")
+        if not isinstance(r[key], str):
+            raise ValueError(f"{path}: '{key}' should be text in quotes.")
     r.setdefault("plugins", [])
     r.setdefault("dlls", [])
     r.setdefault("logs", [])
-    if not r["plugins"] and not r["dlls"]:
-        raise ValueError(f"{path} needs 'plugins' (.esm files) or 'dlls' (SFSE plugin DLLs).")
     r.setdefault("version", "")
     r.setdefault("names", [])
     r.setdefault("scripts", "")
@@ -259,16 +357,64 @@ def load_rules(path):
     r.setdefault("forbid", [])
     r.setdefault("ignore", [])
     r["_path"] = path
+    check_shape(r)
+    Log.write(f"rule file {path}: mod {r['mod']} {r['version']}, {len(r['expect'])} expect, {len(r['forbid'])} forbid, "
+              f"{len(r['order'])} order rule(s)")
     return r
+
+
+def check_shape(r):
+    """Raises ValueError naming the rule file and the field when a field has the wrong shape."""
+    path = r["_path"]
+
+    def text_list(key):
+        v = r[key]
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            raise ValueError(f"{path}: '{key}' should be a list of names in quotes, like [\"MyMod.esm\"].")
+    for key in ("plugins", "dlls", "logs", "names"):
+        text_list(key)
+    for key in ("version", "scripts"):
+        if not isinstance(r[key], str):
+            raise ValueError(f"{path}: '{key}' should be text in quotes.")
+    for kind in ("expect", "forbid"):
+        if not isinstance(r[kind], list):
+            raise ValueError(f"{path}: '{kind}' should be a list of rules [{{\"id\": ..., \"re\": ...}}].")
+        for n, e in enumerate(r[kind], 1):
+            if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("re"), str):
+                raise ValueError(f"{path}: {kind} rule {n} needs an \"id\" and an \"re\" (both text in quotes).")
+            if "min" in e and (not isinstance(e["min"], int) or e["min"] < 1):
+                raise ValueError(f"{path}: {kind} rule '{e['id']}' has 'min' {e['min']!r}; it should be a whole number, 1 or more.")
+    if not isinstance(r["order"], list) or not all(isinstance(q, list) and all(isinstance(x, str) for x in q) for q in r["order"]):
+        raise ValueError(f"{path}: 'order' should be a list of lists of expect ids, like [[\"start\", \"done\"]].")
+    if not isinstance(r["ignore"], list) or not all(isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("re"), str))
+                                                    for x in r["ignore"]):
+        raise ValueError(f"{path}: 'ignore' should be a list of patterns in quotes (or {{\"re\": ...}} entries).")
+    if not r["plugins"] and not r["dlls"]:
+        raise ValueError(f"{path} needs 'plugins' (.esm files) or 'dlls' (SFSE plugin DLLs).")
+
+
+def prepare(r):
+    """Compiles every pattern in a rule file (after --set-version, so {version} is final) and checks the order
+    rules. Raises ValueError naming the file and the pattern."""
+    r["_prefix_rx"] = compile_re(r["prefix"], r, "prefix")
+    r["_expect_rx"] = [compile_re(e["re"], r, f"expect '{e['id']}'") for e in r["expect"]]
+    r["_forbid_rx"] = [compile_re(fb["re"], r, f"forbid '{fb['id']}'") for fb in r["forbid"]]
+    r["_scripts_rx"] = compile_re(r["scripts"], r, "scripts", re.I) if r["scripts"] else None
+    r["_ignore_rx"] = [compile_re(x["re"] if isinstance(x, dict) else x, r, "ignore", re.I) for x in r["ignore"]]
+    known = {e["id"] for e in r["expect"]}
+    for seq in r["order"]:
+        unknown = [x for x in seq if x not in known]
+        if unknown:
+            raise ValueError(f"{r['_path']} has an order rule that names unknown expect ids {unknown}.")
 
 
 def fill(pattern, rules):
     return pattern.replace("{version}", re.escape(rules.get("version", "")))
 
 
-def compile_re(pattern, rules, where):
+def compile_re(pattern, rules, where, flags=0):
     try:
-        return re.compile(fill(pattern, rules))
+        return re.compile(fill(pattern, rules), flags)
     except re.error as e:
         raise ValueError(f"{rules['_path']} has a bad regex in {where}: {e}.")
 
@@ -406,7 +552,9 @@ def check_mod(rules, pkg, blocks, keep=50):
     if rules["logs"] and not src.logs:
         res["logs_missing"] = True
 
-    prefix = compile_re(rules["prefix"], rules, "prefix")
+    if "_prefix_rx" not in rules:
+        prepare(rules)
+    prefix = rules["_prefix_rx"]
     prefix_hits = [(i, n, t) for i, n, t in all_lines(src) if prefix.search(t)]
     res["prefix_lines"] = len(prefix_hits)
     if prefix_hits:
@@ -420,8 +568,7 @@ def check_mod(rules, pkg, blocks, keep=50):
 
     # expect rules
     first_pos = {}
-    for e in rules["expect"]:
-        rx = compile_re(e["re"], rules, f"expect '{e['id']}'")
+    for e, rx in zip(rules["expect"], rules["_expect_rx"]):
         hits = [(i, n, t) for i, n, t in all_lines(src) if rx.search(t)]
         need = int(e.get("min", 1))
         if len(hits) >= need:
@@ -445,11 +592,7 @@ def check_mod(rules, pkg, blocks, keep=50):
                              "other_version_lines": other_version})
 
     # order rules
-    known = {e["id"] for e in rules["expect"]}
     for seq in rules["order"]:
-        unknown = [x for x in seq if x not in known]
-        if unknown:
-            raise ValueError(f"{rules['_path']} has an order rule that names unknown expect ids {unknown}.")
         missing = [x for x in seq if x not in first_pos]
         if missing:
             status, detail = NOT_SEEN, "not all seen: " + ", ".join(missing)
@@ -460,8 +603,7 @@ def check_mod(rules, pkg, blocks, keep=50):
         res["rules"].append({"kind": "order", "id": " > ".join(seq), "status": status, "detail": detail})
 
     # forbid rules
-    for fb in rules["forbid"]:
-        rx = compile_re(fb["re"], rules, f"forbid '{fb['id']}'")
+    for fb, rx in zip(rules["forbid"], rules["_forbid_rx"]):
         hits = [(i, n, t) for i, n, t in all_lines(src) if rx.search(t)]
         status = FAIL if hits else (PASS if ran else NOT_SEEN)
         res["rules"].append({"kind": "forbid", "id": fb["id"], "status": status, "count": len(hits),
@@ -469,12 +611,13 @@ def check_mod(rules, pkg, blocks, keep=50):
                              "lines": [ref(src, *h) for h in hits[:keep]]})
 
     # script errors naming our scripts
-    if rules["scripts"]:
-        srx = re.compile(rules["scripts"], re.I)
-        ign = [re.compile(x["re"] if isinstance(x, dict) else x, re.I) for x in rules["ignore"]]
+    if rules["_scripts_rx"] is not None:
+        srx = rules["_scripts_rx"]
+        ign = rules["_ignore_rx"]
         ours = [b for b in blocks
                 if (srx.search(b["message"]) or any(srx.search(s) for s in b["stack"]))
                 and not any(r.search(b["message"]) for r in ign)]
+        res["_block_ids"] = {id(b) for b in ours}   # for the "other scripts" counts; not in the JSON
         groups = {}
         for b in ours:
             key = (b["kind"], normalise_message(b["message"]), normalise_frame(b["stack"][0]) if b["stack"] else "")
@@ -494,7 +637,7 @@ def check_mod(rules, pkg, blocks, keep=50):
     statuses = [r["status"] for r in res["rules"]]
     if FAIL in statuses:
         res["status"] = FAIL
-    elif not ran:
+    elif not ran and PASS not in statuses:   # a PASS (an expect line without the prefix) still counts as seen
         res["status"] = NOT_SEEN
     else:
         res["status"] = PASS
@@ -524,15 +667,11 @@ def package_checks(pkg, blocks, our_blocks_ids):
     return flags, info
 
 
-def our_block_ids(results, blocks, rules_list):
+def our_block_ids(results):
+    """The error blocks check_mod counted for the mods in the report (after each mod's ignore list)."""
     ids = set()
-    for rules in rules_list:
-        if not rules["scripts"]:
-            continue
-        srx = re.compile(rules["scripts"], re.I)
-        for b in blocks:
-            if srx.search(b["message"]) or any(srx.search(s) for s in b["stack"]):
-                ids.add(id(b))
+    for r in results:
+        ids |= r.pop("_block_ids", set())
     return ids
 
 
@@ -553,7 +692,8 @@ def text_report(data, max_lines):
     out = []
     p = data["package"]
     m = p.get("manifest", {})
-    out.append(f"{TOOL} {VERSION}, run {data['run']}")
+    out.append(BYLINE)
+    out.append(f"Run {data['run']}")
     label = {ZIP: "Package", FOLDER: "Folder", LOG_FILE: "Log file"}.get(p.get("kind"), "Package")
     out.append(f"{label}: {p['name']}")
     out.append(f"  SHA-256 {p['sha256']}" + ("  (of the logs and plugins.txt read)" if p.get("kind") == FOLDER else ""))
@@ -596,7 +736,7 @@ def text_report(data, max_lines):
                        f"last {r['last_prefix']['log']}:{r['last_prefix']['line']})")
         else:
             out.append("   Mod log lines: none. The mod never logged, so its features were probably not tested, or logging is off.")
-            if r["status"] == NOT_SEEN:
+            if r["rules"] and all(x["status"] == NOT_SEEN for x in r["rules"]):
                 out.append(f"   All {len(r['rules'])} rules are NOT SEEN, and its scripts logged no errors.")
                 out.append("")
                 continue
@@ -628,6 +768,10 @@ def text_report(data, max_lines):
                 for ln in x["other_version_lines"][:max_lines]:
                     out.append(f"             {fmt_line(ln)}")
         out.append("")
+    for e in data.get("rule_errors", []):
+        out.append(f"SKIPPED rule file {e['path']}: {e['error']}")
+    if data.get("rule_errors"):
+        out.append("")
     out.append("Package checks")
     if not data["flags"]:
         out.append("  The input has no crash logs, Windows crash events or suspended stacks.")
@@ -641,7 +785,7 @@ def text_report(data, max_lines):
     out.append("was seen, lines are out of order, or a Papyrus error names the mod's scripts. NOT SEEN means no")
     out.append("line matched, which usually means the feature wasn't tested. This report helps you read the logs;")
     out.append("it is not a verdict.")
-    return "\n".join(out) + "\n"
+    return "\n".join(safe(line) for line in out) + "\n"
 
 
 # ----------------------------------------------------------------------------- main
@@ -681,7 +825,17 @@ def run(args):
     if not rule_files:
         raise ValueError(f"No rule files were found. Give --rules FILE, or keep <project>\\testplan\\logrules.json under --root ({root}).")
     explicit = bool(explicit_rules or mods)
-    rules_list = [load_rules(p) for p in rule_files]
+    rules_list, kept_files, rule_errors = [], [], []
+    for p in rule_files:
+        try:
+            rules_list.append(load_rules(p))
+            kept_files.append(p)
+        except (ValueError, OSError) as e:
+            if explicit and (p in explicit_rules or mods):
+                raise
+            rule_errors.append({"path": rel(p, root), "error": str(e)})
+            Log.write(f"skipped rule file {p}: {e}")
+    rule_files = kept_files
     overrides = {}
     for s in args.set_version or []:
         name, _, ver = s.partition("=")
@@ -693,22 +847,39 @@ def run(args):
         if path not in explicit_rules:
             r["_path"] = rel(r["_path"], root)
         project = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(path)))).lower()
-        for key in (project, r["mod"].lower()):
-            if key in overrides:
-                r["_rule_version"], r["version"] = r["version"], overrides[key]
-                used.add(key)
+        keys = [k for k in dict.fromkeys((project, r["mod"].lower())) if k in overrides]   # once, even when both match
+        if keys:
+            versions = {overrides[k] for k in keys}
+            if len(versions) > 1:
+                raise ValueError(f"--set-version gives {r['mod']} two versions ({', '.join(sorted(versions))}): "
+                                 f"once by its folder and once by its mod name. Give one.")
+            r["_rule_version"], r["version"] = r["version"], overrides[keys[0]]
+            used.update(keys)
+            Log.write(f"{r['mod']}: checked as version {r['version']} (--set-version; the rule file says {r['_rule_version']})")
     unused = set(overrides) - used
     if unused:
         raise ValueError(f"--set-version names a mod that wasn't checked: {', '.join(sorted(unused))}.")
 
-    blocks = error_blocks(pkg)
-    results = [check_mod(r, pkg, blocks) for r in rules_list]
+    pairs = list(zip(rule_files, rules_list))
     if not explicit:  # rule files found under --root: only mods whose plugin is loaded (all when there is no plugins.txt)
-        results = [r for r in results if r["plugin_state"] in ("active", "unknown")]
+        before = len(pairs)
+        pairs = [(p, r) for p, r in pairs if plugin_state(r, pkg) in ("active", "unknown")]
+        Log.write(f"--root: {len(pairs)} of {before} rule file(s) are for loaded mods")
+    # Only the mods being checked are compiled: a bad pattern in a rule file of a mod that isn't loaded can't stop the
+    # run, while one in a loaded mod's file still does (exit 2, naming the file and the pattern).
+    rules_list = [r for _, r in pairs]
+    for r in rules_list:
+        prepare(r)
+    pkg.sha256 = pkg._sha256([n for r in rules_list for n in r["logs"]])
+    blocks = error_blocks(pkg)
+    Log.write(f"Papyrus errors and warnings: {len(blocks)}")
+    results = [check_mod(r, pkg, blocks) for r in rules_list]
+    for r in results:
+        Log.write(f"{r['mod']}: {r['status']} (plugin {r['plugin_state']}, {r['prefix_lines']} mod log line(s))")
     order = {FAIL: 0, PASS: 1, NOT_SEEN: 2, NOT_LOADED: 3}
     results.sort(key=lambda r: (order[r["status"]], r["mod"].lower()))
 
-    flags, other = package_checks(pkg, blocks, our_block_ids(results, blocks, rules_list))
+    flags, other = package_checks(pkg, blocks, our_block_ids(results))
     m = pkg.manifest
     game = ""
     v = m.get("versions") or {}
@@ -719,7 +890,7 @@ def run(args):
             game += f"; Engine Fixes {ef['version']}"
     run_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     data = {
-        "tool": TOOL, "version": VERSION, "run": run_stamp,
+        "tool": TOOL, "version": VERSION, "author": AUTHOR, "license": LICENSE_NAME, "url": URL, "run": run_stamp,
         "package": {"name": pkg.name, "kind": pkg.kind, "sha256": pkg.sha256, "stamp": pkg.stamp(),
                     "plugins_txt": pkg.plugins is not None,
                     "manifest": {"created": m.get("created"), "user": m.get("user"), "computer": m.get("computer"),
@@ -729,7 +900,7 @@ def run(args):
                               "first": l["first"], "last": l["last"]} for l in pkg.logs]},
         "rule_files": [{"mod": r["mod"], "version": r["version"], "path": r["_path"],
                         "rule_file_version": r.get("_rule_version", r["version"])} for r in rules_list],
-        "mods": results, "flags": flags, "other_errors": other,
+        "mods": results, "flags": flags, "other_errors": other, "rule_errors": rule_errors,
         "overall": FAIL if any(r["status"] == FAIL for r in results) else "OK",
     }
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
@@ -744,18 +915,26 @@ def run(args):
         f.write(report)
     with open(base + ".json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1, ensure_ascii=False)
+    Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
-    print(f"{pkg.name}")
+    print(safe(pkg.name))
     for r in results:
-        print(f"  {r['status']:<10} {r['mod']} {r['version']}")
+        print(safe(f"  {r['status']:<10} {r['mod']} {r['version']}"))
+    for e in rule_errors:
+        print(safe(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
     for fl in flags:
-        print(f"  FLAG       {fl['kind']}: {fl['text'][:120]}")
+        print(safe(f"  FLAG       {fl['kind']}: {fl['text'][:120]}"))
     print(f"Report: {base}.txt")
     print(f"JSON:   {base}.json")
     return 1 if data["overall"] == FAIL else 0
 
 
 def main(argv=None):
+    # --version is answered here: argparse's version action re-wraps the text into one paragraph.
+    if list(sys.argv[1:] if argv is None else argv) == ["--version"]:
+        print(BYLINE)
+        print("Free software under the MIT licence. It comes with no warranty.")
+        return 0
     ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
                     help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
@@ -778,13 +957,26 @@ def main(argv=None):
     ap.add_argument("--set-version", action="append", metavar="MOD=VERSION",
                     help="This checks a mod (project folder or mod name) as another version than its rule file says, "
                          "for rechecking older logs. You can repeat it.")
-    ap.add_argument("--version", action="version", version=f"{TOOL} {VERSION}")
+    ap.add_argument("--verbose", action="store_true",
+                    help="This prints a troubleshooting log on stderr: what was read, what was decided, and why a run stopped.")
+    ap.add_argument("--log", metavar="FILE",
+                    help="This writes the same troubleshooting log to FILE (overwritten each run), e.g. --log papyrus-log-check.log.txt")
+    ap.add_argument("--version", action="version", version=BYLINE)
     args = ap.parse_args(argv)
+    print(BYLINE, file=sys.stderr)  # on stderr, so the summary on stdout stays the same for scripts
     try:
+        Log.to_stderr = args.verbose
+        if args.log:
+            Log.open(args.log, [x for x in [args.input] + split_list(args.rules) if x])
+        Log.write(f"{BYLINE}; Python {sys.version.split()[0]} on {sys.platform}")
+        Log.write(f"arguments: {' '.join(sys.argv[1:] if argv is None else argv)}")
         return run(args)
     except (OSError, ValueError, zipfile.BadZipFile, KeyError) as e:
-        print(f"{TOOL}: {e}", file=sys.stderr)
+        print(f"{TOOL}: {safe(e)}", file=sys.stderr)
+        Log.write("stopped:\n" + traceback.format_exc())
         return 2
+    finally:
+        Log.close()
 
 
 if __name__ == "__main__":

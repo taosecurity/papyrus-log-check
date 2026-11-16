@@ -40,10 +40,28 @@ jobs:
         run: python -I papyrus_log_check.py examples/Papyrus.0.log --rules examples/example-beacon.logrules.json --out out
       - name: Release zip builds
         run: python -I build_release.py
+      - name: Keep the checksum
+        if: matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha256-${{ matrix.os }}
+          path: dist/*.sha256
+
+  same-zip:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sha256-*
+      - name: Windows and Linux built the same zip
+        run: |
+          cat sha256-*/*.sha256
+          test "$(cat sha256-ubuntu-latest/*.sha256)" = "$(cat sha256-windows-latest/*.sha256)"
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: [test, same-zip]
     runs-on: ubuntu-latest
     permissions:
       contents: write

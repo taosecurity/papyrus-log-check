@@ -392,5 +392,105 @@ class TestExample(unittest.TestCase):
         self.assertEqual(statuses["script errors"], plc.PASS)  # its one error is on the ignore list
 
 
+class TestReviewFixes(Base):
+    """0.3.0: fixes from the 2026-11-16 code and security reviews."""
+
+    def run_json(self, *extra, zkw=None):
+        code = plc.main([make_zip(self.dir, **(zkw or {})), "--root", self.root, "--out", self.out, *extra])
+        js = max((f for f in os.listdir(self.out) if f.endswith(".json")), key=lambda f: os.path.getmtime(os.path.join(self.out, f))) if os.path.isdir(self.out) else None
+        return code, (json.loads(read(os.path.join(self.out, js))) if js else None)
+
+    def test_set_version_once_when_folder_and_mod_name_match(self):
+        write_rules(self.root, "TestMod", dict(RULES, mod="TestMod"))
+        code, data = self.run_json("--set-version", "TestMod=1.0.0")
+        m = data["mods"][0]
+        self.assertEqual(m["version"], "1.0.0")
+        self.assertEqual(m["rule_file_version"], "1.2.0")
+
+    def test_set_version_two_different_values_is_an_error(self):
+        write_rules(self.root, "TestMod", dict(RULES, mod="Other"))
+        code = plc.main([make_zip(self.dir), "--root", self.root, "--out", self.out,
+                         "--set-version", "TestMod=1.0.0", "--set-version", "Other=2.0.0"])
+        self.assertEqual(code, 2)
+
+    def test_bad_scripts_regex_is_exit_2(self):
+        write_rules(self.root, "TestMod", dict(RULES, scripts="TEST_("))
+        self.assertEqual(plc.main([make_zip(self.dir), "--root", self.root, "--out", self.out]), 2)
+
+    def test_broken_rule_file_of_an_inactive_mod_is_skipped(self):
+        write_rules(self.root, "OffMod", dict(RULES, mod="Off", plugins=["OffMod.esm"], prefix="("))
+        code, data = self.run_json()
+        self.assertEqual(code, 1)   # TestMod's own FAILs, not exit 2
+        self.assertEqual([m["mod"] for m in data["mods"]], ["Test Mod"])
+
+    def test_structure_errors_name_the_file(self):
+        for bad in ([], dict(RULES, expect=[{"id": "x"}]), dict(RULES, plugins="TestMod.esm"),
+                    dict(RULES, order=["one"]), dict(RULES, expect=[{"id": "x", "re": "y", "min": 0}])):
+            path = os.path.join(self.dir, "bad.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(bad, f)
+            with self.assertRaises(ValueError) as cm:
+                plc.load_rules(path)
+            self.assertIn("bad.json", str(cm.exception))
+
+    def test_not_valid_json_names_the_file(self):
+        path = os.path.join(self.dir, "broken.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{ nope")
+        with self.assertRaises(ValueError) as cm:
+            plc.load_rules(path)
+        self.assertIn("broken.json", str(cm.exception))
+
+    def test_pass_without_prefix_is_not_not_seen(self):
+        rules = dict(RULES, prefix="NEVERLOGGED:", forbid=[], order=[], scripts="",
+                     expect=[{"id": "one", "re": "TEST: step one"}])
+        _, res = self.check(rules)
+        self.assertEqual(res["status"], plc.PASS)
+
+    def test_odd_manifest_shapes_do_not_crash(self):
+        m = dict(MANIFEST, window="24h", listing=[], versions=["x"], warnings="oops", created=12345)
+        path = os.path.join(self.dir, "odd-20260102-030405.zip")
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("manifest.json", json.dumps(m))
+            z.writestr("Papyrus.0.log", LOG1)
+            z.writestr("Plugins.txt", PLUGINS)
+        code = plc.main([path, "--root", self.root, "--out", self.out])
+        self.assertIn(code, (0, 1))
+
+    def test_control_characters_are_escaped(self):
+        self.assertEqual(plc.safe("a\x1b[2Jb\tc"), "a\\x1B[2Jb\tc")
+        self.assertEqual(plc.safe("plain"), "plain")
+
+    def test_log_option_writes_and_refuses_inputs(self):
+        log = os.path.join(self.dir, "plc-log.txt")
+        code = plc.main([make_zip(self.dir), "--root", self.root, "--out", self.out, "--log", log])
+        self.assertEqual(code, 1)
+        self.assertIn("rule file", read(log))
+        self.assertEqual(plc.main([make_zip(self.dir), "--root", self.root, "--out", self.out,
+                                   "--log", os.path.join(self.dir, "Papyrus.0.log")]), 2)
+        z = make_zip(self.dir)
+        self.assertEqual(plc.main([z, "--root", self.root, "--out", self.out, "--log", z]), 2)
+
+    def test_ignored_errors_count_as_other_scripts(self):
+        rules = dict(RULES, ignore=["Foo\\(\\)"])
+        write_rules(self.root, "TestMod", rules)
+        code, data = self.run_json()
+        self.assertEqual(data["other_errors"], [{"log": "Papyrus.1.log", "error": 2, "warning": 0}])
+
+    def test_folder_hash_covers_named_logs(self):
+        folder = make_folder(os.path.join(self.dir, "f"))
+        with open(os.path.join(folder, "mydll.log"), "w", encoding="utf-8") as f:
+            f.write("one\n")
+        rules = dict(RULES, logs=["mydll.log"])
+        write_rules(self.root, "TestMod", rules)
+        plc.main([folder, "--root", self.root, "--out", self.out])
+        h1 = json.loads(read(os.path.join(self.out, max((x for x in os.listdir(self.out) if x.endswith(".json")), key=lambda x: os.path.getmtime(os.path.join(self.out, x))))))["package"]["sha256"]
+        with open(os.path.join(folder, "mydll.log"), "w", encoding="utf-8") as f:
+            f.write("two\n")
+        plc.main([folder, "--root", self.root, "--out", self.out])
+        h2 = json.loads(read(os.path.join(self.out, max((x for x in os.listdir(self.out) if x.endswith(".json")), key=lambda x: os.path.getmtime(os.path.join(self.out, x))))))["package"]["sha256"]
+        self.assertNotEqual(h1, h2)
+
+
 if __name__ == "__main__":
     unittest.main()

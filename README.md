@@ -14,6 +14,9 @@ reads: it never changes the logs or the rule files.
 
 This tool was built with [Claude Code](https://claude.com/claude-code).
 
+**For AI assistants:** [AGENTS.md](AGENTS.md) has step-by-step instructions: what the tool is for, the commands,
+the exit codes and the limits.
+
 ## Quick start
 
 Download the release zip, unpack it, and try the made-up example:
@@ -93,6 +96,8 @@ python papyrus_log_check.py --logs-dir FOLDER --rules FILE
 | `--out FOLDER` | This sets where the reports go. The default is `out\` next to the script. |
 | `--max-lines N` | This sets how many matching lines the text report shows per rule. The default is 5, and the JSON report keeps up to 50. |
 | `--set-version MyMod=0.9.1` | This checks a mod as another version than its rule file says (give the mod name or project folder). It is for rechecking older logs, and you can repeat it. |
+| `--verbose` | This prints a troubleshooting log on stderr (see below). |
+| `--log FILE` | This writes the same troubleshooting log to FILE, for example `--log papyrus-log-check.log.txt`. |
 
 When a rule with `{version}` finds nothing, the report also shows the same line logged with any
 other version. That usually means a different build was installed.
@@ -110,6 +115,20 @@ The exit code tells scripts what happened:
 - 0 means no rule failed.
 - 1 means at least one rule failed.
 - 2 means the arguments were wrong, a rule file was bad, or the input couldn't be read.
+
+With `--root`, a rule file that can't be read at all is skipped and listed as SKIPPED in the summary
+and the report. A bad pattern in the rule file of a mod that isn't loaded never stops the run; one in
+a loaded mod's rule file does (exit 2, naming the file and the pattern).
+
+### Troubleshooting log
+
+When a run doesn't do what you expect, turn on the log. `--verbose` prints it on stderr, each line
+starting `log: `, and `--log FILE` writes it to a file you name (overwritten each run). It says what
+was read (the input, how many logs, plugins.txt, the manifest), each rule file and what it holds,
+which mods were left out because their plugin isn't loaded, each mod's result, and, when the run
+stops, the full error. The report and the summary are the same with or without it. `--log` refuses a
+name that would overwrite an input: a Papyrus log, the zip, a rule file or anything inside the input
+folder.
 
 ## Rule files
 
@@ -164,8 +183,8 @@ Papyrus sometimes changes the case of a string it has seen before ("Started" can
 Each mod gets one of four results:
 
 - **NOT LOADED** means none of its plugins is active in plugins.txt. Nothing else is checked.
-- **NOT SEEN** means no line matches `prefix`. Usually the mod's features weren't tested, or the
-  debug lines don't reach the log.
+- **NOT SEEN** means no line matches `prefix` and no rule passed. Usually the mod's features
+  weren't tested, or the debug lines don't reach the log.
 - **FAIL** means at least one rule failed.
 - **PASS** means the mod logged and no rule failed. Some rules may still be NOT SEEN.
 
@@ -182,7 +201,10 @@ Each rule gets its own result:
   when none does.
 
 Warnings that name the mod's scripts are listed, but they don't fail the mod. Errors from other
-scripts (the base game, other mods) are only counted.
+scripts (the base game, other mods), and errors on a mod's `ignore` list, are only counted.
+
+Text from the logs, rule files and manifest is shown with control characters as `\xNN`, so escape
+codes hidden in a shared log can't change your terminal.
 
 FLAG lines at the end of the report aren't tied to one mod. They report crash logs in the input
 and suspended-stack lines, which mean the Papyrus engine was falling behind.
