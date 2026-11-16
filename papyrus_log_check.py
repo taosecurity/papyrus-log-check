@@ -34,7 +34,7 @@ import traceback
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"

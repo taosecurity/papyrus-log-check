@@ -392,6 +392,43 @@ class TestExample(unittest.TestCase):
         self.assertEqual(statuses["script errors"], plc.PASS)  # its one error is on the ignore list
 
 
+class TestStarterExample(unittest.TestCase):
+    """The starter rule file in examples\\ (README "Add logging to a Creation Kit mod") loads and fits the
+    README's script."""
+
+    PATH = os.path.join(os.path.dirname(HERE), "examples", "starter-mymod.logrules.json")
+    LOG = ("[10:00:00] Papyrus log opened (PC-64)\n"
+           "[10:00:01] MYMOD: quest started, version 0.1.0\n"
+           "[10:00:20] MYMOD: item used by [ObjectReference < (00000014)>]\n"
+           "[10:00:21] MYMOD: reward given\n")
+
+    def test_loads(self):
+        r = plc.load_rules(self.PATH)
+        plc.prepare(r)  # compiles every pattern and checks the order ids
+        self.assertEqual(r["prefix"], "MYMOD:")
+        self.assertEqual([e["id"] for e in r["expect"]], ["started", "used", "done"])
+
+    def run_log(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "Papyrus.0.log")
+            with open(log, "w", encoding="utf-8") as f:
+                f.write(text)
+            out = os.path.join(d, "out")
+            code = plc.main([log, "--rules", self.PATH, "--out", out])
+            js = [f for f in os.listdir(out) if f.endswith(".json")][0]
+            return code, json.loads(read(os.path.join(out, js)))["mods"][0]
+
+    def test_readme_lines_pass(self):
+        code, m = self.run_log(self.LOG)
+        self.assertEqual((code, m["status"]), (0, plc.PASS))
+        statuses = {x["id"]: x["status"] for x in m["rules"]}
+        self.assertEqual(statuses["started > used > done"], plc.PASS)
+
+    def test_warning_fails(self):
+        code, m = self.run_log(self.LOG + "[10:00:22] MYMOD: WARNING: no user, reward skipped\n")
+        self.assertEqual((code, m["status"]), (1, plc.FAIL))
+
+
 class TestReviewFixes(Base):
     """0.3.0: fixes from the 2026-11-16 code and security reviews."""
 

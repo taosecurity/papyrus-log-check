@@ -59,6 +59,62 @@ Start the game, play the part you want to check, and quit. The logs are in
 Your mod's own lines come from `Debug.Trace` calls in its scripts. If you compile with the
 `-release` flag, the compiler removes every `Debug` call, so nothing of yours reaches the log.
 
+## Add logging to a Creation Kit mod
+
+The tool can only check what your mod writes to the log. If your scripts have no `Debug.Trace`
+lines yet, add a few. You don't need many: one when the mod starts and one at each step you want
+to confirm in a test.
+
+1. **Pick one prefix and keep it.** Choose a short tag for your mod, such as `MYMOD:`, and start
+   every line with it. The rule file's `prefix` matches it, so a line with a different spelling
+   (`MyMod:` or `MYMOD -`) is invisible to the tool.
+2. **Put the prefix in one place.** Give each script a small `Log` function that adds the prefix,
+   and call it instead of `Debug.Trace`. Then a typo can't creep in.
+3. **Log at the moments a tester would ask about.** Good places are the start of the events your
+   mod reacts to (`OnQuestInit`, `OnInit`, `OnActivate`, `OnItemEquipped` and so on), the code in a
+   quest stage fragment, the line just after the mod does its main job, and any branch where
+   something goes wrong (write `WARNING` in those).
+4. **Include the version in the start line.** A rule with `{version}` then catches an old build
+   that is still installed.
+5. **Never compile with `-release`.** It removes every `Debug` call. Compile normally, from the
+   Creation Kit or with the Papyrus compiler without that flag.
+
+Here is a quest script for a made-up mod, in the script's `.psc` source:
+
+```papyrus
+ScriptName MYMOD_QuestScript extends Quest
+
+String Property ModVersion = "0.1.0" AutoReadOnly
+
+Function Log(String msg)
+    Debug.Trace("MYMOD: " + msg)
+EndFunction
+
+Event OnQuestInit()
+    Log("quest started, version " + ModVersion)
+EndEvent
+
+Function ItemUsed(ObjectReference akUser)
+    Log("item used by " + akUser)
+    If akUser == None
+        Log("WARNING: no user, reward skipped")
+        Return
+    EndIf
+    ; ... the mod's real work goes here ...
+    Log("reward given")
+EndFunction
+```
+
+In a quest stage fragment, write the whole call, with the same prefix:
+`Debug.Trace("MYMOD: stage 20 reached")`.
+
+[`examples/starter-mymod.logrules.json`](examples/starter-mymod.logrules.json) is a starter rule
+file for exactly these lines: the start line (with the version) must appear, "item used" and
+"reward given" should appear in that order, and a `WARNING` line fails the mod. Copy it, change
+`mod`, `version`, `plugins`, `prefix` and the patterns to your own, and add a rule for each new
+line you log. The script names (`scripts`) start with the same tag, so Papyrus errors in your
+scripts are counted as yours.
+
 ## What it can read
 
 You can give it any of these three kinds of input:

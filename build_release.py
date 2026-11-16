@@ -25,7 +25,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = [
     "papyrus_log_check.py", "README.md", "AGENTS.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
-    "examples/example-beacon.logrules.json", "examples/Papyrus.0.log",
+    "examples/example-beacon.logrules.json", "examples/Papyrus.0.log", "examples/starter-mymod.logrules.json",
     "tests/test_papyrus_log_check.py",
 ]
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)

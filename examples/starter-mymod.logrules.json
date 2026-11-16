@@ -1,0 +1,23 @@
+{
+  "mod": "My Mod",
+  "version": "0.1.0",
+  "plugins": ["MyMod.esm"],
+  "names": ["MyMod"],
+  "prefix": "MYMOD:",
+  "scripts": "^MYMOD_|\\bMYMOD_",
+  "expect": [
+    {"id": "started", "re": "MYMOD: quest started, version {version}", "always": true,
+     "show": "MYMOD: quest started, version …",
+     "means": "The quest script writes this when the mod first starts. If it is missing, the quest never ran or the script was compiled with -release."},
+    {"id": "used", "re": "MYMOD: item used by ",
+     "means": "The player used the mod's item."},
+    {"id": "done", "re": "MYMOD: reward given",
+     "means": "The mod finished its main job and gave the reward."}
+  ],
+  "order": [["started", "used", "done"]],
+  "forbid": [
+    {"id": "warning", "re": "MYMOD: WARNING",
+     "means": "The mod logged a warning; read the line in the report."}
+  ],
+  "ignore": []
+}

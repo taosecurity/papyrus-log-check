@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 (2026-11-16)
+
+- The README has a new section, "Add logging to a Creation Kit mod": where to put `Debug.Trace` lines in a
+  script, keeping one prefix through a small `Log` function, and never compiling with `-release`.
+- `examples/starter-mymod.logrules.json` is a starter rule file for the README's example script, with a test that
+  it loads and fits the script's lines. AGENTS.md says how to start from it.
+
 ## 0.3.0 (2026-11-16)
 
 From a code review and a security review.
