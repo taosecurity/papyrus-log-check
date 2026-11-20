@@ -570,8 +570,14 @@ class TestVersionText(unittest.TestCase):
         import contextlib
         import io
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = plc.main(["--", "--version"])
+        old = os.getcwd()
+        with tempfile.TemporaryDirectory() as empty:   # an empty folder, so no file called --version exists
+            os.chdir(empty)
+            try:
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = plc.main(["--", "--version"])
+            finally:
+                os.chdir(old)
         self.assertEqual(code, 2)   # a missing input named --version, not the version text
         self.assertNotIn("Free software", out.getvalue() + err.getvalue())
         self.assertIn("--version was not found", out.getvalue() + err.getvalue())
