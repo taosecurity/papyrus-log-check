@@ -529,5 +529,19 @@ class TestReviewFixes(Base):
         self.assertNotEqual(h1, h2)
 
 
+class TestVersionText(unittest.TestCase):
+    def test_version_says_license_in_american_spelling(self):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = plc.main(["--version"])
+        out = buf.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn(plc.BYLINE, out)
+        self.assertIn("MIT license", out)
+        self.assertNotIn("licence", out.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

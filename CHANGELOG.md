@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.2 (2026-11-20)
+
+### What's new
+
+This is a small wording fix. The `--version` text now spells "license" the American way, to match the rest of the documentation. Nothing else about how the tool checks logs has changed.
+
+### Example
+
+    > python papyrus_log_check.py --version
+    papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    Free software under the MIT license. It comes with no warranty.
+
+### Fixes
+
+- `--version` used the British spelling of "license". It now prints "MIT license", and a test checks the wording.
+- The script's opening comment uses the same spelling.
+
+### Download
+
+Download `papyrus-log-check-0.3.2.zip` below, unpack it and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
+
 ## 0.3.1 (2026-11-16)
 
 ### What's new

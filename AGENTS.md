@@ -1,7 +1,7 @@
 # AGENTS.md: papyrus-log-check for AI assistants
 
 Plain steps for an AI assistant helping someone use papyrus-log-check. Every command here was run once on
-papyrus-log-check 0.3.1 before release. The [README](README.md) has the full description.
+papyrus-log-check 0.3.2 before release. The [README](README.md) has the full description.
 
 ## 1. What it is for
 
@@ -20,12 +20,12 @@ it to judge whether a mod is "good": its report is a reading aid, not a verdict.
 
 ## 3. Install
 
-Download `papyrus-log-check-0.3.1.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
+Download `papyrus-log-check-0.3.2.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
 against the `.sha256` file:
 
-    certutil -hashfile papyrus-log-check-0.3.1.zip SHA256
+    certutil -hashfile papyrus-log-check-0.3.2.zip SHA256
 
-Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.3.1.zip.sha256` checks it.
+Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.3.2.zip.sha256` checks it.
 
 ## 4. Prove the install works
 

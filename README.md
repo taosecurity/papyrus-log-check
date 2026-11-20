@@ -16,7 +16,7 @@ The release zip holds a made-up log and a rule file for a made-up mod called Exa
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json
-papyrus-log-check 0.3.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   PASS       Example Beacon 1.0.0
 Report: ...\out\logcheck-20261109-095824-run20261120-152609.txt
@@ -53,7 +53,7 @@ python papyrus_log_check.py "C:\Users\<you>\Documents\My Games\Starfield\Logs\Sc
 The tool is one Python script that uses only Python's standard library, so there is nothing else to install. It needs Python 3.9 or newer and works on Windows and Linux (for example, on logs copied from a Steam Deck). It only reads: it never changes the logs or the rule files.
 
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type `python --version`. It should print a version number.
-2. Download `papyrus-log-check-0.3.1.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
+2. Download `papyrus-log-check-0.3.2.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
 3. Open the unpacked folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A Command Prompt window opens in that folder, ready for the commands in this README.
 4. Run the example command at the top of this page. It should print `PASS       Example Beacon 1.0.0`.
 
@@ -129,7 +129,7 @@ Copy it, change `mod`, `version`, `plugins`, `prefix` and the patterns to your o
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\starter-mymod.logrules.json
-papyrus-log-check 0.3.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   NOT SEEN   My Mod 0.1.0
 Report: ...\out\logcheck-20261109-095824-run20261120-152609-2.txt
@@ -277,8 +277,8 @@ The log says what was read (the input, how many logs, plugins.txt, the manifest)
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
-papyrus-log-check 0.3.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
-log: papyrus-log-check 0.3.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
+papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+log: papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
 log: arguments: examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
 log: input: log file examples\Papyrus.0.log: 1 files, 1 Papyrus log(s), plugins.txt none, manifest none
 log: rule file examples\example-beacon.logrules.json: mod Example Beacon 1.0.0, 3 expect, 1 forbid, 1 order rule(s)

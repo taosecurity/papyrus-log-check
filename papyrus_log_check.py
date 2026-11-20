@@ -14,7 +14,7 @@ It reports PASS / FAIL / NOT SEEN for each rule in each mod's rule file, plus ge
 (Papyrus errors naming the mod's scripts, crash logs, suspended stacks).
 
 Read-only: it never changes the logs or the rule files.
-Standard library only. MIT licence (see LICENSE).
+Standard library only. MIT license (see LICENSE).
 
 Usage:
   python -I papyrus_log_check.py INPUT --rules mymod.logrules.json [--rules other.json]
@@ -34,7 +34,7 @@ import traceback
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"
@@ -933,7 +933,7 @@ def main(argv=None):
     # --version is answered here: argparse's version action re-wraps the text into one paragraph.
     if list(sys.argv[1:] if argv is None else argv) == ["--version"]:
         print(BYLINE)
-        print("Free software under the MIT licence. It comes with no warranty.")
+        print("Free software under the MIT license. It comes with no warranty.")
         return 0
     ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
