@@ -2,10 +2,30 @@
 
 ## 0.3.1 (2026-11-16)
 
-- The README has a new section, "Add logging to a Creation Kit mod": where to put `Debug.Trace` lines in a
-  script, keeping one prefix through a small `Log` function, and never compiling with `-release`.
-- `examples/starter-mymod.logrules.json` is a starter rule file for the README's example script, with a test that
-  it loads and fits the script's lines. AGENTS.md says how to start from it.
+### What's new
+
+This release is about getting started. The README has a new section, "Add logging to a Creation Kit mod", that shows where to put `Debug.Trace` lines in a script so papyrus-log-check has something to check. It also comes with a starter rule file that fits the README's example script, so you can copy it and change it for your own mod.
+
+### Example
+
+Check that the starter rule file loads by running it on the example log. The log comes from another mod, so a good rule file shows NOT SEEN and exits with code 0:
+
+    > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\starter-mymod.logrules.json
+    papyrus-log-check 0.3.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    Papyrus.0.log
+      NOT SEEN   My Mod 0.1.0
+    Report: ...\out\logcheck-20261109-095824-run20261120-152609-2.txt
+    JSON:   ...\out\logcheck-20261109-095824-run20261120-152609-2.json
+
+### Changes
+
+- The README's new section "Add logging to a Creation Kit mod" covers where to put `Debug.Trace` lines in a script, keeping one prefix through a small `Log` function, and never compiling with `-release`.
+- `examples/starter-mymod.logrules.json` is a starter rule file for the README's example script. A test checks that it loads and fits the script's lines.
+- AGENTS.md says how to start a rule file from the starter.
+
+### Download
+
+Download `papyrus-log-check-0.3.1.zip` below, unpack it and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
 
 ## 0.3.0 (2026-11-16)
 
