@@ -930,13 +930,7 @@ def run(args):
 
 
 def main(argv=None):
-    # --version is answered here: argparse's version action re-wraps the text into one paragraph.
-    # Any --version in the arguments answers the same way (with other options too, such as --version --verbose).
-    if "--version" in list(sys.argv[1:] if argv is None else argv):
-        print(BYLINE)
-        print("Free software under the MIT license. It comes with no warranty.")
-        return 0
-    ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
+    ap =argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
                     help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
                          "Without it, the newest zip in --logs-dir is checked.")
@@ -962,8 +956,15 @@ def main(argv=None):
                     help="This prints a troubleshooting log on stderr: what was read, what was decided, and why a run stopped.")
     ap.add_argument("--log", metavar="FILE",
                     help="This writes the same troubleshooting log to FILE (overwritten each run), e.g. --log papyrus-log-check.log.txt")
-    ap.add_argument("--version", action="version", version=BYLINE)
+    # --version is a plain flag answered below, not argparse's version action, which re-wraps the text into one
+    # paragraph. argparse still parses it, so short forms (--vers), --help and "--" work as for any option.
+    ap.add_argument("--version", action="store_true", dest="show_version",
+                    help="This prints the version and license, then exits.")
     args = ap.parse_args(argv)
+    if args.show_version:
+        print(BYLINE)
+        print("Free software under the MIT license. It comes with no warranty.")
+        return 0
     print(BYLINE, file=sys.stderr)  # on stderr, so the summary on stdout stays the same for scripts
     try:
         Log.to_stderr = args.verbose

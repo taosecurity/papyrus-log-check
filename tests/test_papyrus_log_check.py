@@ -546,14 +546,33 @@ class TestVersionText(unittest.TestCase):
         import contextlib
         import io
         outs = []
-        for args in (["--version"], ["--version", "--verbose"], ["--verbose", "--version"]):
+        for args in (["--version"], ["--version", "--verbose"], ["--verbose", "--version"], ["--vers"]):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(plc.main(args), 0)
             outs.append(buf.getvalue())
         self.assertEqual(outs[0], outs[1])
         self.assertEqual(outs[0], outs[2])
+        self.assertEqual(outs[0], outs[3])
         self.assertIn("MIT license", outs[1])
+
+    def test_help_before_version_prints_help(self):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as cm:
+            plc.main(["--help", "--version"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("usage:", buf.getvalue())
+        self.assertNotIn("Free software", buf.getvalue())
+
+    def test_version_after_double_dash_is_an_input_path(self):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = plc.main(["--", "--version"])
+        self.assertNotEqual(code, 0)   # a missing input named --version, not the version text
 
 
 if __name__ == "__main__":

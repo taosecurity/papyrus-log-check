@@ -15,7 +15,8 @@ This is a small fix release. The `--version` text now spells "license" the Ameri
 ### Fixes
 
 - `--version` used the British spelling of "license". It now prints "MIT license", and a test checks the wording.
-- `--version` now answers the same way when other options are given too (for example `--version --verbose`). Before, it printed a shorter, wrapped byline without the license sentence.
+- `--version` now prints the same two lines however it is given: with other options (`--version --verbose`) or shortened (`--vers`). Before, those printed a shorter, wrapped byline without the license sentence. `--help` lists it too.
+- The script's opening comment uses the same spelling.
 - The README's install steps now say Python 3.9 or newer, as the rest of the documentation does.
 
 ### Download
