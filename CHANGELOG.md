@@ -4,7 +4,7 @@
 
 ### What's new
 
-This is a small wording fix. The `--version` text now spells "license" the American way, to match the rest of the documentation. Nothing else about how the tool checks logs has changed.
+This is a small fix release. The `--version` text now spells "license" the American way and prints the same two lines whatever other options are given, and the README agrees on the Python version you need. Nothing about how the tool checks logs has changed.
 
 ### Example
 
@@ -15,7 +15,8 @@ This is a small wording fix. The `--version` text now spells "license" the Ameri
 ### Fixes
 
 - `--version` used the British spelling of "license". It now prints "MIT license", and a test checks the wording.
-- The script's opening comment uses the same spelling.
+- `--version` now answers the same way when other options are given too (for example `--version --verbose`). Before, it printed a shorter, wrapped byline without the license sentence.
+- The README's install steps now say Python 3.9 or newer, as the rest of the documentation does.
 
 ### Download
 

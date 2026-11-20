@@ -542,6 +542,19 @@ class TestVersionText(unittest.TestCase):
         self.assertIn("MIT license", out)
         self.assertNotIn("licence", out.lower())
 
+    def test_version_with_other_options_prints_the_same_text(self):
+        import contextlib
+        import io
+        outs = []
+        for args in (["--version"], ["--version", "--verbose"], ["--verbose", "--version"]):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(plc.main(args), 0)
+            outs.append(buf.getvalue())
+        self.assertEqual(outs[0], outs[1])
+        self.assertEqual(outs[0], outs[2])
+        self.assertIn("MIT license", outs[1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -931,7 +931,8 @@ def run(args):
 
 def main(argv=None):
     # --version is answered here: argparse's version action re-wraps the text into one paragraph.
-    if list(sys.argv[1:] if argv is None else argv) == ["--version"]:
+    # Any --version in the arguments answers the same way (with other options too, such as --version --verbose).
+    if "--version" in list(sys.argv[1:] if argv is None else argv):
         print(BYLINE)
         print("Free software under the MIT license. It comes with no warranty.")
         return 0
