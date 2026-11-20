@@ -172,7 +172,7 @@ python papyrus_log_check.py --logs-dir FOLDER --rules FILE
 | `--set-version MyMod=0.9.1` | This checks a mod as another version than its rule file says (give the mod name or project folder). It is for rechecking older logs, and you can repeat it. |
 | `--verbose` | This prints a troubleshooting log on stderr (see below). |
 | `--log FILE` | This writes the same troubleshooting log to FILE, for example `--log papyrus-log-check.log.txt`. |
-| `--version` | This prints the version and exits. |
+| `--version` | This prints the version and license, then exits. |
 
 When a rule with `{version}` finds nothing, the report also shows the same line logged with any other version. That usually means a different build was installed.
 

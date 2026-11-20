@@ -569,10 +569,20 @@ class TestVersionText(unittest.TestCase):
     def test_version_after_double_dash_is_an_input_path(self):
         import contextlib
         import io
-        err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = plc.main(["--", "--version"])
-        self.assertNotEqual(code, 0)   # a missing input named --version, not the version text
+        self.assertEqual(code, 2)   # a missing input named --version, not the version text
+        self.assertNotIn("Free software", out.getvalue() + err.getvalue())
+        self.assertIn("--version was not found", out.getvalue() + err.getvalue())
+
+    def test_version_before_a_bad_option_still_answers(self):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(plc.main(["--version", "--bogus"]), 0)
+        self.assertIn("MIT license", buf.getvalue())
 
 
 if __name__ == "__main__":

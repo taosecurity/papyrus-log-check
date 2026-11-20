@@ -4,7 +4,7 @@
 
 ### What's new
 
-This is a small fix release. The `--version` text now spells "license" the American way and prints the same two lines whatever other options are given, and the README agrees on the Python version you need. Nothing about how the tool checks logs has changed.
+This is a small fix release. The `--version` text now spells "license" the American way and prints the same two lines however it is given, and the README agrees on the Python version you need. Nothing about how the tool checks logs has changed.
 
 ### Example
 

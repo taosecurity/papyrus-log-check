@@ -929,8 +929,20 @@ def run(args):
     return 1 if data["overall"] == FAIL else 0
 
 
+class _VersionShown(Exception):
+    """Raised by --version while the arguments are parsed; main() prints the version text and returns 0."""
+
+
+class _VersionAction(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        raise _VersionShown()
+
+
 def main(argv=None):
-    ap =argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
+    ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
                     help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
                          "Without it, the newest zip in --logs-dir is checked.")
@@ -956,12 +968,13 @@ def main(argv=None):
                     help="This prints a troubleshooting log on stderr: what was read, what was decided, and why a run stopped.")
     ap.add_argument("--log", metavar="FILE",
                     help="This writes the same troubleshooting log to FILE (overwritten each run), e.g. --log papyrus-log-check.log.txt")
-    # --version is a plain flag answered below, not argparse's version action, which re-wraps the text into one
-    # paragraph. argparse still parses it, so short forms (--vers), --help and "--" work as for any option.
-    ap.add_argument("--version", action="store_true", dest="show_version",
-                    help="This prints the version and license, then exits.")
-    args = ap.parse_args(argv)
-    if args.show_version:
+    # --version uses its own action, not argparse's version action, which re-wraps the text into one paragraph.
+    # Like that action it answers as soon as it is parsed (so a bad option after it doesn't matter), and argparse
+    # still handles short forms (--vers), --help before it and "--" as for any option.
+    ap.add_argument("--version", action=_VersionAction, help="This prints the version and license, then exits.")
+    try:
+        args = ap.parse_args(argv)
+    except _VersionShown:
         print(BYLINE)
         print("Free software under the MIT license. It comes with no warranty.")
         return 0
