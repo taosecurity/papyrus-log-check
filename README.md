@@ -192,7 +192,7 @@ You can give it any of these three kinds of input:
 
 A folder or zip may also hold these files:
 
-- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. `Starfield.esm` always counts as active, because the game always loads it and never lists it there.
+- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. A rule file whose only plugin is `Starfield.esm` always counts as active, because the game always loads it and never lists it there; in a file that also names other plugins, only those are looked up.
 - **Crash logs** (`Crashlog*.txt`, `crash-*.log`, or files in a `crashlogs` folder) are listed as FLAG lines.
 - **An SFSE plugin's own log** is checked when a rule file names it in `logs`.
 
@@ -208,7 +208,7 @@ python papyrus_log_check.py --logs-dir FOLDER --rules FILE
 |---|---|
 | `INPUT` | This is the log file, folder or zip to check (see above). |
 | `--rules FILE` | This names a rule file to check against. Repeat it, or give a comma list, for several mods. |
-| `--root FOLDER` | If you keep many mods as `<FOLDER>\<project>\testplan\logrules.json` (or one level deeper, `<FOLDER>\<group>\<project>\...`), this option finds all of their rule files. Without `--mods`, only mods whose plugin is active in `plugins.txt` are checked. Each of the others gets one `NOT LOADED` line in the summary and in a short list at the end of the report. The default is the current folder, and it is used only when no `--rules` is given. |
+| `--root FOLDER` | If you keep many mods as `<FOLDER>\<project>\testplan\logrules.json` (or one level deeper, `<FOLDER>\<group>\<project>\...`), this option finds all of their rule files. Without `--mods`, only mods whose plugin is active in `plugins.txt` (or whose DLL is loaded) are checked. Each of the others gets one `NOT LOADED` line in the summary and in a short list at the end of the report. The default is the current folder, and it is used only when no `--rules` is given. |
 | `--mods A,B` | With `--root`, this checks only the project folders you name. |
 | `--logs-dir FOLDER` | When no INPUT is given, this checks the newest `.zip` in the folder. "Newest" goes by the `yyyymmdd-hhmmss` stamp in the file name, or else by file time. The environment variable `PAPYRUS_LOG_CHECK_LOGS` does the same. |
 | `--out FOLDER` | This sets where the reports go. The default is `out\` next to the script. |
