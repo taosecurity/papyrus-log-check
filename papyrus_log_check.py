@@ -389,6 +389,11 @@ def check_shape(r):
                 raise ValueError(f"{path}: {kind} rule {n} needs an \"id\" and an \"re\" (both text in quotes).")
             if "min" in e and (not isinstance(e["min"], int) or e["min"] < 1):
                 raise ValueError(f"{path}: {kind} rule '{e['id']}' has 'min' {e['min']!r}; it should be a whole number, 1 or more.")
+            if kind == "explain":
+                for key in ("min", "always"):
+                    if key in e:
+                        raise ValueError(f"{path}: explain rule '{e['id']}' has '{key}', which only expect rules use. "
+                                         f"Remove '{key}' from it, or make it an expect rule.")
     if not isinstance(r["order"], list) or not all(isinstance(q, list) and all(isinstance(x, str) for x in q) for q in r["order"]):
         raise ValueError(f"{path}: 'order' should be a list of lists of expect ids, like [[\"start\", \"done\"]].")
     if not isinstance(r["ignore"], list) or not all(isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("re"), str))
@@ -522,15 +527,18 @@ def script_frame(stack):
 def plugin_state(rules, pkg):
     """'active', 'inactive', 'missing' or 'unknown' (the input can't tell: no plugins.txt / no DLL listing).
     .esm plugins are looked up in plugins.txt, SFSE DLLs in the DLL listing. Starfield.esm is always active
-    (0.4.0): the game loads it without listing it, so a rule file for the base game's own messages always runs."""
+    (0.4.0): the game loads it without listing it, so a rule file for the base game's own messages always runs.
+    It counts only for a rule file whose only plugins are always-loaded ones: a file that also names its own
+    plugins or DLLs is active only when one of those is."""
     states = []
-    if any(p.lower() in ALWAYS_LOADED for p in rules["plugins"]):
+    own = [p for p in rules["plugins"] if p.lower() not in ALWAYS_LOADED]
+    if rules["plugins"] and not own and not rules["dlls"]:
         states.append(True)
-    elif rules["plugins"]:
+    elif own:
         if pkg.plugins is None:
             states.append(None)
         else:
-            states += [pkg.plugins.get(p.lower(), "missing") for p in rules["plugins"]]
+            states += [pkg.plugins.get(p.lower(), "missing") for p in own]
     if rules["dlls"]:
         dlls = pkg.sfse_dlls()
         if dlls is None:
@@ -635,8 +643,10 @@ def check_mod(rules, pkg, blocks, keep=50):
     # explain rules (0.4.0): lines worth knowing about, such as the engine's own error messages. A match is FOUND,
     # which is shown with the rule's 'means' but never fails the mod. Error lines also get the script that raised
     # them (the top line of the stack that follows), so the reader knows whose error it is.
-    top_frame = {} if rules["logs"] else {(b["log_index"], b["line"]): script_frame(b["stack"]) for b in blocks
-                                          if not SUSPENDED_RE.search(b["message"])}   # a stack dump names many scripts
+    top_frame = {}
+    if rules["explain"] and not rules["logs"]:
+        top_frame = {(b["log_index"], b["line"]): script_frame(b["stack"]) for b in blocks
+                     if not SUSPENDED_RE.search(b["message"])}   # a stack dump names many scripts
     for x, rx in zip(rules["explain"], rules["_explain_rx"]):
         hits = [(i, n, t) for i, n, t in all_lines(src) if rx.search(t)]
         status = FOUND if hits else (PASS if ran else NOT_SEEN)
@@ -675,11 +685,13 @@ def check_mod(rules, pkg, blocks, keep=50):
                              "groups": sorted(groups.values(), key=lambda g: (g["kind"] != "error", -g["count"]))})
 
     statuses = [r["status"] for r in res["rules"]]
+    seen = ran or PASS in statuses   # a PASS (an expect line without the prefix) still counts as seen
+    explain_only = not (rules["expect"] or rules["forbid"] or rules["order"] or rules["_scripts_rx"] is not None)
     if FAIL in statuses:
         res["status"] = FAIL
-    elif FOUND in statuses:
-        res["status"] = FOUND
-    elif not ran and PASS not in statuses:   # a PASS (an expect line without the prefix) still counts as seen
+    elif FOUND in statuses and (seen or explain_only):
+        res["status"] = FOUND   # a mod that never logged stays NOT SEEN; its FOUND lines still show in the body
+    elif not seen:
         res["status"] = NOT_SEEN
     else:
         res["status"] = PASS
@@ -819,7 +831,7 @@ def text_report(data, max_lines):
                     out.append(f"             {fmt_line(ln)}")
         out.append("")
     if data.get("not_loaded"):
-        out.append("Not loaded: these rule files were found under --root, but none of their plugins is active in plugins.txt,")
+        out.append("Not loaded: these rule files were found under --root, but none of their plugins or DLLs is loaded,")
         out.append("so they were not checked.")
         for n in data["not_loaded"]:
             out.append(f"  NOT LOADED {n['mod']} {n['version']}  ({', '.join(n['plugins'])}: {n['plugin_state']}; rules {n['path']})")

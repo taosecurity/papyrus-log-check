@@ -776,5 +776,86 @@ class TestRootNotLoaded(Base):
         self.assertNotIn("NOT LOADED", stdout)
 
 
+class TestReviewFixes040(Base):
+    """0.4.0 code-review fixes."""
+
+    def test_starfield_esm_does_not_make_other_plugins_active(self):
+        cases = [(["Starfield.esm", "OffMod.esm"], [], "inactive"),
+                 (["Starfield.esm", "Absent.esm"], [], "missing"),
+                 (["Starfield.esm", "TestMod.esm"], [], "active"),
+                 (["Absent.esm", "starfield.esm"], [], "missing"),
+                 (["Starfield.esm"], ["Nope.dll"], "missing"),
+                 (["Starfield.esm"], ["MyDll.dll"], "active"),
+                 (["Starfield.esm"], [], "active")]
+        for plugins, dlls, want in cases:
+            with self.subTest(plugins=plugins, dlls=dlls):
+                _, res = self.check(dict(RULES, plugins=plugins, dlls=dlls))
+                self.assertEqual(res["plugin_state"], want)
+                if want != "active":
+                    self.assertEqual(res["status"], plc.NOT_LOADED)
+        _, res = self.check(dict(RULES, plugins=["Starfield.esm", "OffMod.esm"]), plugins=None)
+        self.assertEqual(res["plugin_state"], "unknown")
+
+    def test_found_does_not_beat_not_seen_for_a_mod_that_never_logged(self):
+        explain = [{"id": "none", "re": "on a None object", "means": "Something was empty."}]
+        rules = dict(RULES, prefix="NEVERLOGGED:", expect=[{"id": "three", "re": "TEST: step three"}],
+                     order=[], forbid=[], scripts="", explain=explain)
+        _, res = self.check(rules)
+        self.assertEqual(res["status"], plc.NOT_SEEN)
+        self.assertEqual([r["status"] for r in res["rules"] if r["kind"] == "explain"], [plc.FOUND])
+        for scripts in ("", "^NOSUCH_"):
+            with self.subTest(scripts=scripts):
+                # forbid only / scripts only: still not explain-only, so NOT SEEN
+                r2 = dict(rules, expect=[], forbid=[{"id": "bad", "re": "nothing like this"}] if not scripts else [],
+                          scripts=scripts)
+                _, res = self.check(r2)
+                self.assertEqual(res["status"], plc.NOT_SEEN)
+        _, res = self.check(dict(rules, expect=[]))   # explain rules only, like the starter pack
+        self.assertEqual(res["status"], plc.FOUND)
+        _, res = self.check(dict(rules, prefix="TEST:"))   # the mod ran
+        self.assertEqual(res["status"], plc.FOUND)
+
+    def test_not_seen_mod_still_shows_its_found_lines_in_the_report(self):
+        path = os.path.join(self.dir, "quiet.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(RULES, prefix="NEVERLOGGED:", expect=[{"id": "three", "re": "TEST: step three"}],
+                           order=[], forbid=[], scripts="",
+                           explain=[{"id": "none", "re": "on a None object", "means": "Something was empty."}]), f)
+        code, stdout, data, txt = run_quiet([make_zip(self.dir), "--rules", path, "--out", self.out])
+        self.assertEqual(code, 0)
+        self.assertEqual(data["mods"][0]["status"], plc.NOT_SEEN)
+        self.assertIn("NOT SEEN", stdout)
+        self.assertIn("explain none: 2 found", txt)
+        self.assertIn("(Something was empty.)", txt)
+
+    def test_not_loaded_heading_fits_dll_only_rule_files(self):
+        write_rules(self.root, "DllMod", dict(RULES, mod="Dll Mod", plugins=[], dlls=["Nope.dll"]))
+        _, _, data, txt = run_quiet([make_zip(self.dir), "--root", self.root, "--out", self.out])
+        self.assertEqual([n["mod"] for n in data["not_loaded"]], ["Dll Mod"])
+        self.assertIn("none of their plugins or DLLs is loaded", txt)
+        self.assertNotIn("is active in plugins.txt", txt)
+
+    def test_min_and_always_are_refused_on_explain_rules(self):
+        path = os.path.join(self.dir, "bad.json")
+        for key, value in (("min", 2), ("always", True)):
+            with self.subTest(key=key):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(dict(RULES, explain=[{"id": "x", "re": "y", key: value}]), f)
+                with self.assertRaisesRegex(ValueError, f"bad.json: explain rule 'x' has '{key}'"):
+                    plc.load_rules(path)
+
+    def test_stack_frames_are_not_read_without_explain_rules(self):
+        real = plc.script_frame
+
+        def refuse(stack):
+            raise AssertionError("script_frame called for a rule file with no explain rules")
+        plc.script_frame = refuse
+        try:
+            _, res = self.check(RULES)
+        finally:
+            plc.script_frame = real
+        self.assertEqual(res["status"], plc.FAIL)
+
+
 if __name__ == "__main__":
     unittest.main()

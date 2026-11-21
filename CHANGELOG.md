@@ -33,9 +33,9 @@ The report explains each line it found, for example:
 - `rules/papyrus-scripts-and-properties.logrules.json` explains 10 messages about missing script files, scripts attached to the wrong kind of object, missing native functions, and properties that a script and its plugin disagree about.
 - `rules/papyrus-saves-and-load.logrules.json` explains 6 warnings about saves made with other script versions, and the warning that the script engine was overloaded.
 - `examples/starter-pack-sample.log` is a made-up log with a line for every pack rule. The tests check that each rule matches its own line and no other.
-- Rule files can have `explain` rules. A match is FOUND, which is shown with the rule's `means` and never fails the mod or changes the exit code. A mod whose explain rules match and whose other rules pass is FOUND.
+- Rule files can have `explain` rules. A match is FOUND, which is shown with the rule's `means` and never fails the mod or changes the exit code. A mod whose explain rules match and whose other rules pass is FOUND. A mod that never logged stays NOT SEEN, with its FOUND lines still in the report, unless its rule file has only explain rules. Explain rules can't have `min` or `always`; the tool says which file and rule to fix.
 - Each line an explain rule finds names the script behind the error (the first script line of the stack that follows it), in the report and in the JSON (`at`).
-- `Starfield.esm` always counts as active, because the game always loads it and never lists it in plugins.txt. A rule file about the game's own messages names it as its plugin.
+- `Starfield.esm` always counts as active, because the game always loads it and never lists it in plugins.txt. A rule file about the game's own messages names it as its only plugin. In a rule file that also names other plugins or DLLs, it doesn't count, so the mod is checked only when one of those is loaded.
 - With `--root`, each rule file whose plugin isn't active now gets a `NOT LOADED` line in the summary and in a short list at the end of the report, and the JSON lists them in `not_loaded`. Before, they were left out without a word, so a run that checked nothing looked empty.
 - AGENTS.md says that the `--set-version` example prints FAIL when the log shows another version, and what a `--root` run prints for mods that aren't loaded.
 

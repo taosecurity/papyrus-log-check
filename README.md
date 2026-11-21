@@ -99,7 +99,7 @@ Their rules are **explain** rules. A rule that matches shows as FOUND, with its 
 
 The base game and most mods write some of these lines in every session, so a FOUND is not a fault by itself. Look at the `at` line to see whose script it is, and read the explanation when it names one of yours. The wording of each rule follows the Creation Kit wiki page "Papyrus Runtime Errors" and the lines Starfield actually writes.
 
-The release zip has a made-up log, `examples\starter-pack-sample.log`, with one line for each rule. This is a real run of the whole pack on it:
+The release zip has a made-up log, `examples\starter-pack-sample.log`, with one line for each rule. This is a real run of the whole pack on it, from the unpacked tool folder (from anywhere else, put the tool folder's path in front of `rules\` and `examples\`):
 
 ```
 > python papyrus_log_check.py examples\starter-pack-sample.log --rules rules\papyrus-runtime-errors.logrules.json --rules rules\papyrus-scripts-and-properties.logrules.json --rules rules\papyrus-saves-and-load.logrules.json
@@ -265,7 +265,7 @@ Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examp
 | Field | What it means |
 |---|---|
 | `mod`, `version` | The report shows them. `{version}` in any regex is replaced by the version, so a wrong build shows up as a FAIL. |
-| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. `Starfield.esm` always counts as active, so a rule file about the game's own messages names it. |
+| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. `Starfield.esm` always counts as active, so a rule file about the game's own messages names it as its only plugin. In a rule file that also names other plugins or DLLs, `Starfield.esm` doesn't count: one of the others must be loaded. |
 | `dlls` | These are the DLL names of an SFSE plugin. Without a DLL listing, `.dll` files in the input count as installed. Give `plugins`, `dlls` or both. |
 | `logs` | These are log file names to check instead of the Papyrus logs, for example `["my_sfse_plugin.log"]`. |
 | `names` | These are words to look for in the input's name. A match shows as "named in note" in the summary. |
@@ -292,10 +292,10 @@ Package checks
 
 Each mod gets one of five results:
 
-- **NOT LOADED** means none of its plugins is active in plugins.txt. Nothing else is checked.
+- **NOT LOADED** means none of its plugins is active in plugins.txt and none of its DLLs is installed. Nothing else is checked.
 - **NOT SEEN** means no line matches `prefix` and no rule passed. Usually the mod's features weren't tested, or the debug lines don't reach the log.
 - **FAIL** means at least one rule failed.
-- **FOUND** means no rule failed, but at least one `explain` rule matched. Read its lines in the report. It doesn't change the exit code.
+- **FOUND** means no rule failed, but at least one `explain` rule matched. Read its lines in the report. It doesn't change the exit code. A mod that never logged stays NOT SEEN even when an explain rule matched (its FOUND lines are still in the report), unless its rule file has only explain rules, as the starter pack's files do.
 - **PASS** means the mod logged and no rule failed. Some rules may still be NOT SEEN.
 
 Each rule gets its own result:

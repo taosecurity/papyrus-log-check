@@ -47,8 +47,9 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 
       python -I papyrus_log_check.py logs.zip --rules MyMod.logrules.json
 
-- Explain the engine's error and warning lines in any log (no rule file of your own needed). The pack's three
-  files can be given together with the mod's own rule file:
+- Explain the engine's error and warning lines in any log (no rule file of your own needed). Run it from the
+  unpacked tool folder, where the `rules` folder is, or put the tool folder's path in front of each `rules/...`
+  path. The pack's three files can be given together with the mod's own rule file:
 
       python -I papyrus_log_check.py "<path>\Papyrus.0.log" --rules rules/papyrus-runtime-errors.logrules.json --rules rules/papyrus-scripts-and-properties.logrules.json --rules rules/papyrus-saves-and-load.logrules.json
 
