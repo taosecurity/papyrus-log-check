@@ -10,8 +10,9 @@ Input is one of:
 A folder or zip may also hold plugins.txt (which plugins were active) and crash logs. Optional
 metadata a log collector may add (manifest.json, events.txt) is read when present.
 
-It reports PASS / FAIL / NOT SEEN for each rule in each mod's rule file, plus general problems
-(Papyrus errors naming the mod's scripts, crash logs, suspended stacks).
+It reports PASS / FAIL / NOT SEEN for each rule in each mod's rule file (FOUND for explain rules, such as the
+starter pack in the rules folder for the engine's own messages), plus general problems (Papyrus errors naming the mod's
+scripts, crash logs, suspended stacks).
 
 Read-only: it never changes the logs or the rule files.
 Standard library only. MIT license (see LICENSE).
@@ -34,7 +35,7 @@ import traceback
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"
@@ -42,6 +43,9 @@ URL = "https://github.com/taosecurity/papyrus-log-check"
 BYLINE = f"{TOOL} {VERSION} by {AUTHOR} - {LICENSE_NAME} - {URL}"
 
 PASS, FAIL, NOT_SEEN, NOT_LOADED = "PASS", "FAIL", "NOT SEEN", "NOT LOADED"
+FOUND = "FOUND"   # 0.4.0: an "explain" rule matched; worth reading, but not a failure
+# The base game's master file is always loaded, and the game never lists it in plugins.txt.
+ALWAYS_LOADED = {"starfield.esm"}
 
 STAMP_RE = re.compile(r"(\d{8}-\d{6})")
 PAPYRUS_RE = re.compile(r"(?:^|/)papyrus\.(\d+)\.log$", re.I)
@@ -355,11 +359,12 @@ def load_rules(path):
     r.setdefault("expect", [])
     r.setdefault("order", [])
     r.setdefault("forbid", [])
+    r.setdefault("explain", [])
     r.setdefault("ignore", [])
     r["_path"] = path
     check_shape(r)
     Log.write(f"rule file {path}: mod {r['mod']} {r['version']}, {len(r['expect'])} expect, {len(r['forbid'])} forbid, "
-              f"{len(r['order'])} order rule(s)")
+              f"{len(r['order'])} order, {len(r['explain'])} explain rule(s)")
     return r
 
 
@@ -376,7 +381,7 @@ def check_shape(r):
     for key in ("version", "scripts"):
         if not isinstance(r[key], str):
             raise ValueError(f"{path}: '{key}' should be text in quotes.")
-    for kind in ("expect", "forbid"):
+    for kind in ("expect", "forbid", "explain"):
         if not isinstance(r[kind], list):
             raise ValueError(f"{path}: '{kind}' should be a list of rules [{{\"id\": ..., \"re\": ...}}].")
         for n, e in enumerate(r[kind], 1):
@@ -399,6 +404,7 @@ def prepare(r):
     r["_prefix_rx"] = compile_re(r["prefix"], r, "prefix")
     r["_expect_rx"] = [compile_re(e["re"], r, f"expect '{e['id']}'") for e in r["expect"]]
     r["_forbid_rx"] = [compile_re(fb["re"], r, f"forbid '{fb['id']}'") for fb in r["forbid"]]
+    r["_explain_rx"] = [compile_re(x["re"], r, f"explain '{x['id']}'") for x in r["explain"]]
     r["_scripts_rx"] = compile_re(r["scripts"], r, "scripts", re.I) if r["scripts"] else None
     r["_ignore_rx"] = [compile_re(x["re"] if isinstance(x, dict) else x, r, "ignore", re.I) for x in r["ignore"]]
     known = {e["id"] for e in r["expect"]}
@@ -477,7 +483,7 @@ def error_blocks(pkg):
             if not m:
                 k += 1
                 continue
-            block = {"log": log["name"], "line": k + 1, "kind": m.group(2).lower(),
+            block = {"log": log["name"], "log_index": i, "line": k + 1, "kind": m.group(2).lower(),
                      "message": m.group(3).strip(), "text": lines[k], "stack": []}
             k += 1
             while k < len(lines) and not TIME_RE.match(lines[k]):
@@ -500,11 +506,27 @@ def normalise_frame(frame):
     return re.sub(r"^\[.*?\]\.", "", frame)
 
 
+FRAME_RE = re.compile(r' - "[^"]+" Line \S+$')
+
+
+def script_frame(stack):
+    """The stack line that names the script behind an error: the first frame in a script file, else the first
+    frame of any kind (a built-in function's frame says "<native>"). None for a stack dump or no stack."""
+    frames = [s for s in stack if FRAME_RE.search(s)]
+    for s in frames:
+        if '"<native>"' not in s:
+            return s
+    return frames[0] if frames else None
+
+
 def plugin_state(rules, pkg):
     """'active', 'inactive', 'missing' or 'unknown' (the input can't tell: no plugins.txt / no DLL listing).
-    .esm plugins are looked up in plugins.txt, SFSE DLLs in the DLL listing."""
+    .esm plugins are looked up in plugins.txt, SFSE DLLs in the DLL listing. Starfield.esm is always active
+    (0.4.0): the game loads it without listing it, so a rule file for the base game's own messages always runs."""
     states = []
-    if rules["plugins"]:
+    if any(p.lower() in ALWAYS_LOADED for p in rules["plugins"]):
+        states.append(True)
+    elif rules["plugins"]:
         if pkg.plugins is None:
             states.append(None)
         else:
@@ -610,6 +632,24 @@ def check_mod(rules, pkg, blocks, keep=50):
                              "pattern": fill(fb["re"], rules), "means": fb.get("means", ""),
                              "lines": [ref(src, *h) for h in hits[:keep]]})
 
+    # explain rules (0.4.0): lines worth knowing about, such as the engine's own error messages. A match is FOUND,
+    # which is shown with the rule's 'means' but never fails the mod. Error lines also get the script that raised
+    # them (the top line of the stack that follows), so the reader knows whose error it is.
+    top_frame = {} if rules["logs"] else {(b["log_index"], b["line"]): script_frame(b["stack"]) for b in blocks
+                                          if not SUSPENDED_RE.search(b["message"])}   # a stack dump names many scripts
+    for x, rx in zip(rules["explain"], rules["_explain_rx"]):
+        hits = [(i, n, t) for i, n, t in all_lines(src) if rx.search(t)]
+        status = FOUND if hits else (PASS if ran else NOT_SEEN)
+        lines = []
+        for h in hits[:keep]:
+            line = ref(src, *h)
+            frame = top_frame.get((h[0], h[1]))
+            if frame:
+                line["at"] = frame
+            lines.append(line)
+        res["rules"].append({"kind": "explain", "id": x["id"], "status": status, "count": len(hits),
+                             "pattern": fill(x["re"], rules), "means": x.get("means", ""), "lines": lines})
+
     # script errors naming our scripts
     if rules["_scripts_rx"] is not None:
         srx = rules["_scripts_rx"]
@@ -637,6 +677,8 @@ def check_mod(rules, pkg, blocks, keep=50):
     statuses = [r["status"] for r in res["rules"]]
     if FAIL in statuses:
         res["status"] = FAIL
+    elif FOUND in statuses:
+        res["status"] = FOUND
     elif not ran and PASS not in statuses:   # a PASS (an expect line without the prefix) still counts as seen
         res["status"] = NOT_SEEN
     else:
@@ -731,9 +773,13 @@ def text_report(data, max_lines):
             out.append("   The plugin is not active in plugins.txt, so its rules were not checked.")
             out.append("")
             continue
+        explain_only = bool(r["rules"]) and all(x["kind"] == "explain" for x in r["rules"])
         if r["prefix_lines"]:
-            out.append(f"   Mod log lines: {r['prefix_lines']} (first {r['first_prefix']['log']}:{r['first_prefix']['line']}, "
+            label = "Lines read" if explain_only else "Mod log lines"   # a rule pack for the game's own messages
+            out.append(f"   {label}: {r['prefix_lines']} (first {r['first_prefix']['log']}:{r['first_prefix']['line']}, "
                        f"last {r['last_prefix']['log']}:{r['last_prefix']['line']})")
+        elif explain_only:
+            out.append("   Lines read: none. No line matched this rule file's prefix.")
         else:
             out.append("   Mod log lines: none. The mod never logged, so its features were probably not tested, or logging is off.")
             if r["rules"] and all(x["status"] == NOT_SEEN for x in r["rules"]):
@@ -746,6 +792,8 @@ def text_report(data, max_lines):
                 out.append(f"   {x['status']:<9} expect {x['id']} ({req}): {x['count']} found")
             elif x["kind"] == "forbid":
                 out.append(f"   {x['status']:<9} forbid {x['id']}: {x['count']} found")
+            elif x["kind"] == "explain":
+                out.append(f"   {x['status']:<9} explain {x['id']}: {x['count']} found")
             elif x["kind"] == "order":
                 out.append(f"   {x['status']:<9} order {x['id']}: {x['detail']}")
             else:
@@ -761,12 +809,20 @@ def text_report(data, max_lines):
             shown = x.get("lines", [])[:max_lines]
             for ln in shown:
                 out.append(f"             {fmt_line(ln)}")
+                if ln.get("at"):
+                    out.append(f"                at {ln['at'][:160]}")
             if x.get("count", 0) > len(shown):
                 out.append(f"             ... and {x['count'] - len(shown)} more")
             if x.get("other_version_lines"):
                 out.append("             The same line was found with another version (was a different build installed?):")
                 for ln in x["other_version_lines"][:max_lines]:
                     out.append(f"             {fmt_line(ln)}")
+        out.append("")
+    if data.get("not_loaded"):
+        out.append("Not loaded: these rule files were found under --root, but none of their plugins is active in plugins.txt,")
+        out.append("so they were not checked.")
+        for n in data["not_loaded"]:
+            out.append(f"  NOT LOADED {n['mod']} {n['version']}  ({', '.join(n['plugins'])}: {n['plugin_state']}; rules {n['path']})")
         out.append("")
     for e in data.get("rule_errors", []):
         out.append(f"SKIPPED rule file {e['path']}: {e['error']}")
@@ -783,8 +839,8 @@ def text_report(data, max_lines):
     out.append("")
     out.append("PASS means a line was seen as expected. FAIL means a required line is missing, a forbidden line")
     out.append("was seen, lines are out of order, or a Papyrus error names the mod's scripts. NOT SEEN means no")
-    out.append("line matched, which usually means the feature wasn't tested. This report helps you read the logs;")
-    out.append("it is not a verdict.")
+    out.append("line matched, which usually means the feature wasn't tested. FOUND means an explain rule matched: the")
+    out.append("lines are worth reading, but they don't fail the mod. This report helps you read the logs; it is not a verdict.")
     return "\n".join(safe(line) for line in out) + "\n"
 
 
@@ -861,9 +917,19 @@ def run(args):
         raise ValueError(f"--set-version names a mod that wasn't checked: {', '.join(sorted(unused))}.")
 
     pairs = list(zip(rule_files, rules_list))
+    not_loaded = []
     if not explicit:  # rule files found under --root: only mods whose plugin is loaded (all when there is no plugins.txt)
         before = len(pairs)
-        pairs = [(p, r) for p, r in pairs if plugin_state(r, pkg) in ("active", "unknown")]
+        kept = []
+        for p, r in pairs:
+            state = plugin_state(r, pkg)
+            if state in ("active", "unknown"):
+                kept.append((p, r))
+            else:   # 0.4.0: listed as NOT LOADED (one line each), so a run that checks nothing says why
+                not_loaded.append({"mod": r["mod"], "version": r["version"], "path": r["_path"],
+                                   "plugins": r["plugins"] + r["dlls"], "plugin_state": state})
+        pairs = kept
+        not_loaded.sort(key=lambda n: n["mod"].lower())
         Log.write(f"--root: {len(pairs)} of {before} rule file(s) are for loaded mods")
     # Only the mods being checked are compiled: a bad pattern in a rule file of a mod that isn't loaded can't stop the
     # run, while one in a loaded mod's file still does (exit 2, naming the file and the pattern).
@@ -876,7 +942,7 @@ def run(args):
     results = [check_mod(r, pkg, blocks) for r in rules_list]
     for r in results:
         Log.write(f"{r['mod']}: {r['status']} (plugin {r['plugin_state']}, {r['prefix_lines']} mod log line(s))")
-    order = {FAIL: 0, PASS: 1, NOT_SEEN: 2, NOT_LOADED: 3}
+    order = {FAIL: 0, FOUND: 1, PASS: 2, NOT_SEEN: 3, NOT_LOADED: 4}
     results.sort(key=lambda r: (order[r["status"]], r["mod"].lower()))
 
     flags, other = package_checks(pkg, blocks, our_block_ids(results))
@@ -900,7 +966,7 @@ def run(args):
                               "first": l["first"], "last": l["last"]} for l in pkg.logs]},
         "rule_files": [{"mod": r["mod"], "version": r["version"], "path": r["_path"],
                         "rule_file_version": r.get("_rule_version", r["version"])} for r in rules_list],
-        "mods": results, "flags": flags, "other_errors": other, "rule_errors": rule_errors,
+        "mods": results, "not_loaded": not_loaded, "flags": flags, "other_errors": other, "rule_errors": rule_errors,
         "overall": FAIL if any(r["status"] == FAIL for r in results) else "OK",
     }
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
@@ -920,6 +986,8 @@ def run(args):
     print(safe(pkg.name))
     for r in results:
         print(safe(f"  {r['status']:<10} {r['mod']} {r['version']}"))
+    for n in not_loaded:
+        print(safe(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
     for e in rule_errors:
         print(safe(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
     for fl in flags:

@@ -1,13 +1,15 @@
 # AGENTS.md: papyrus-log-check for AI assistants
 
 Plain steps for an AI assistant helping someone use papyrus-log-check. Every command here was run once on
-papyrus-log-check 0.3.2 before release. The [README](README.md) has the full description.
+papyrus-log-check 0.4.0 before release. The [README](README.md) has the full description.
 
 ## 1. What it is for
 
 papyrus-log-check reads Starfield Papyrus logs (`Papyrus.0.log` and older ones, a folder of them, or a zip) and
 checks them against a rule file the mod author writes (`*.logrules.json`). For each rule it says PASS, FAIL or
-NOT SEEN, and it points out Papyrus errors that name the mod's scripts, crash logs and suspended stacks.
+NOT SEEN, and it points out Papyrus errors that name the mod's scripts, crash logs and suspended stacks. Its
+starter rule pack (`rules\`) explains the game's own Papyrus error and warning lines on any log; its matches show
+as FOUND and never fail a run.
 
 Use it when a mod author or tester wants to know whether a test session logged what the mod should log. Don't use
 it to judge whether a mod is "good": its report is a reading aid, not a verdict.
@@ -20,12 +22,12 @@ it to judge whether a mod is "good": its report is a reading aid, not a verdict.
 
 ## 3. Install
 
-Download `papyrus-log-check-0.3.2.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
+Download `papyrus-log-check-0.4.0.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
 against the `.sha256` file:
 
-    certutil -hashfile papyrus-log-check-0.3.2.zip SHA256
+    certutil -hashfile papyrus-log-check-0.4.0.zip SHA256
 
-Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.3.2.zip.sha256` checks it.
+Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.4.0.zip.sha256` checks it.
 
 ## 4. Prove the install works
 
@@ -45,13 +47,31 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 
       python -I papyrus_log_check.py logs.zip --rules MyMod.logrules.json
 
+- Explain the engine's error and warning lines in any log (no rule file of your own needed). The pack's three
+  files can be given together with the mod's own rule file:
+
+      python -I papyrus_log_check.py "<path>\Papyrus.0.log" --rules rules/papyrus-runtime-errors.logrules.json --rules rules/papyrus-scripts-and-properties.logrules.json --rules rules/papyrus-saves-and-load.logrules.json
+
+  On the shipped sample (`examples/starter-pack-sample.log` in place of the path) it prints `FOUND` for all three
+  (`Papyrus runtime errors 1.0.0`, `Papyrus saves and engine load 1.0.0`, `Papyrus scripts and properties 1.0.0`)
+  and a `FLAG suspended stacks` line, and exits with code 0. The base game writes many of these lines too: the
+  report's `at ...` line under each error names the script that raised it, so look there before blaming a mod.
+
 - Check every mod kept as `<root>\<project>\testplan\logrules.json` whose plugin is active in the input's plugins.txt:
 
       python -I papyrus_log_check.py logs.zip --root C:\Modding\Projects
 
+  Each rule file found whose plugin isn't active (inactive or not in plugins.txt) is not checked and gets one
+  `NOT LOADED <mod> <version>` line. A run where every line says NOT LOADED checked nothing, and exits with code 0.
+
 - Recheck an older log as an older version of the mod:
 
       python -I papyrus_log_check.py old.zip --rules MyMod.logrules.json --set-version "My Mod=0.9.1"
+
+  Expect `FAIL` (exit code 1) when the log was written by yet another version: a rule with `{version}` (such as
+  the start line) then finds nothing, and the report shows the line with the version the log has. For example,
+  `examples/Papyrus.0.log --rules examples/example-beacon.logrules.json --set-version "Example Beacon=0.9.1"`
+  prints `FAIL       Example Beacon 0.9.1`, because that log says version 1.0.0.
 
 - Start a rule file for a mod that doesn't log yet: follow the README section "Add logging to a Creation Kit mod"
   (one prefix, a `Log` helper, never `-release`), then copy `examples/starter-mymod.logrules.json` and change
@@ -68,10 +88,11 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 - **Input:** a Papyrus log file, a folder holding Papyrus.N.log files, or a zip of them (read in memory, never
   unpacked). Rule files: `--rules FILE` (repeatable) or `--root FOLDER`.
 - **Output:** two files in `--out` (default `out\` next to the script): `logcheck-<input stamp>-run<run stamp>.txt`
-  and `.json`. They are never overwritten. stdout gets one line per mod (`PASS`, `FAIL`, `NOT SEEN`,
+  and `.json`. They are never overwritten. stdout gets one line per mod (`PASS`, `FAIL`, `FOUND`, `NOT SEEN`,
   `NOT LOADED`), any `SKIPPED` rule files and `FLAG` lines, then the two report paths. stderr gets the byline.
-- **Exit codes:** 0 = no rule failed; 1 = at least one FAIL; 2 = bad arguments, a bad rule file (the message names
-  the file and the field) or an input that couldn't be read.
+  The JSON lists checked mods in `mods` and, with `--root`, the unchecked ones in `not_loaded`.
+- **Exit codes:** 0 = no rule failed (FOUND counts as no failure); 1 = at least one FAIL; 2 = bad arguments, a bad
+  rule file (the message names the file and the field) or an input that couldn't be read.
 - **Log:** only when asked: `--verbose` to stderr, `--log FILE` to that file (overwritten each run; a name that
   would overwrite an input is refused).
 
@@ -83,3 +104,5 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   posting it (PRIVACY.md).
 - NOT SEEN usually means a feature wasn't tested, not that it's broken.
 - It can only check what the mod logs. A mod without `Debug.Trace` lines gives NOT SEEN for everything.
+- The starter pack explains messages; it doesn't decide whose fault they are. A FOUND line from the base game's
+  own scripts is normal in every session.

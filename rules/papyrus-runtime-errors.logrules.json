@@ -1,0 +1,30 @@
+{
+  "mod": "Papyrus runtime errors",
+  "version": "1.0.0",
+  "about": "Starter rule pack. It explains the Papyrus engine's common runtime errors in plain words. Its rules are explain rules, so a match shows as FOUND and never fails a run. Most of these messages come from the base game and other mods too, so look at the script named under each line ('at ...') to see whose error it is.",
+  "source": "The wording follows the Creation Kit wiki page 'Papyrus Runtime Errors' and the lines Starfield writes to Papyrus.0.log.",
+  "plugins": ["Starfield.esm"],
+  "prefix": "^\\[",
+  "explain": [
+    {"id": "none-object", "re": "Cannot call \\w+\\(\\) on a None object",
+     "means": "A script called a function on a variable or property that was empty (None). The usual cause is a property that was never filled in the Creation Kit, or an object that was deleted or not loaded yet. The script skipped that call and went on."},
+    {"id": "no-native-object", "re": "Unable to call \\w+ - no native object bound to the script object",
+     "means": "A script called a built-in function on an object that no longer exists in the game. This happens most often in magic effect scripts after the effect has ended, and with objects inside containers."},
+    {"id": "none-into-alias", "re": "Cannot add a None reference to the alias",
+     "means": "A script tried to put an empty reference into a quest alias. The reference it wanted was not found."},
+    {"id": "none-array", "re": "Cannot access an element of a None array",
+     "means": "A script read from an array that was never created. The script should check the array before it uses it."},
+    {"id": "array-index", "re": "Array index -?\\d+ is out of range",
+     "means": "A script asked for an array element that doesn't exist, such as element 5 of a 3-element array."},
+    {"id": "divide-by-zero", "re": "Cannot divide by zero",
+     "means": "A script divided by zero. The result is thrown away."},
+    {"id": "assigning-none", "re": "Assigning None to a non-object variable named",
+     "means": "A script stored None in a number, text or true/false variable. This usually follows a failed call: read the error just before this line, which is the real cause."},
+    {"id": "constant-global", "re": "Cannot set the value of a constant GlobalVariable",
+     "means": "A script tried to change a global variable that is marked Constant in its plugin. The value stays as it was."},
+    {"id": "no-3d", "re": "does not have 3d and cannot have an effect shader played on it",
+     "means": "A script tried to play a visual effect on an object that isn't drawn at the moment (it is far away, disabled or not loaded yet). This is usually harmless."},
+    {"id": "stack-too-deep", "re": "Stack too deep \\(infinite recursion likely\\)",
+     "means": "A function kept calling itself, or a chain of functions went too deep, and the engine stopped it. Look for a function that calls itself without a way to stop."}
+  ]
+}

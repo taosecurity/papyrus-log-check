@@ -1,0 +1,22 @@
+{
+  "mod": "Papyrus saves and engine load",
+  "version": "1.0.0",
+  "about": "Starter rule pack. It explains the warnings the game writes when a save was made with other versions of scripts (a mod was updated or removed), and the warning that the script engine is overloaded. Its rules are explain rules, so a match shows as FOUND and never fails a run.",
+  "source": "The wording follows the Creation Kit wiki page 'Papyrus Runtime Errors' and the lines Starfield writes to Papyrus.0.log.",
+  "plugins": ["Starfield.esm"],
+  "prefix": "^\\[",
+  "explain": [
+    {"id": "function-changed", "re": "differs from the in-game resource files - using version from save",
+     "means": "The save was made while a function was running, and that function has changed since then (the mod was updated). The game finishes the old version from the save first. It is a sign that you are testing on an old save."},
+    {"id": "function-removed", "re": "doesn't exist in the in-game resource files - using version from save",
+     "means": "The save was made while a function was running, and that function no longer exists in the script on disk. The game finishes the old version from the save."},
+    {"id": "type-missing", "re": "Unable to get type \\S+ referenced by the save game",
+     "means": "The save holds objects of a script that no longer exists or didn't load. Usually a mod that was removed or renamed its scripts. Those objects are not loaded."},
+    {"id": "variable-type", "re": "Type of variable \\S+ on script \\S+, which is \\S+, doesn't match the type loaded",
+     "means": "A script variable changed type between the save and now. The saved value is thrown away."},
+    {"id": "variable-removed", "re": "loaded from save not found within the actual object",
+     "means": "The save holds a script variable that the script no longer has. The saved value is thrown away. This is normal after a mod update."},
+    {"id": "stacks-over-threshold", "re": "stacks? (?:count )?is over our warning threshold",
+     "means": "The script engine was too busy and wrote a dump of every running script. Look in the dump for one script that appears many times: it may be running away (a loop or an update that never stops)."}
+  ]
+}

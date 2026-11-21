@@ -1,0 +1,65 @@
+[11/01/2026 - 09:00:00PM] Papyrus log opened (PC-64)
+[21:00:00] Update budget: 1.2ms (Extra tasklet budget: 1.2ms, Load screen budget: 500.0ms)
+[21:00:00] Memory page: 128 (min) 512 (max) 76800 (max total)
+[21:00:00] Maximum stack depth: 100
+[21:00:01] Cannot open store for class "EXB_OldTestScript", missing file?
+[21:00:01] error: Unable to bind script EXB_OldTestScript to  (02000810) because their base types do not match
+[21:00:02] warning: Property BeaconSound on script EXB_BeaconScript attached to EXB_BeaconQuest (02000801) cannot be initialized because the script no longer contains that property
+[21:00:02] warning: EXB_LampScript does not have a property named LampColor, property skipped
+[21:00:02] warning: Property Version on object EXB_BeaconQuest is read-only, property skipped
+[21:00:02] warning: The type of property Target on object EXB_BeaconQuest does not match the passed-in type at creation, property skipped
+[21:00:02] error: Property TargetMarker on script EXB_BeaconScript attached to EXB_BeaconQuest (02000801) cannot be bound because <nullptr alias> (3) on quest EXB_BeaconQuest (02000801) is not the right type
+[21:00:02] error: Struct type EXB_Settings does not contain a variable named Range
+[21:00:02] error: Overridden function OnLoad in object EXB_LampChildScript does not have the same signature as in parent object EXB_LampScript.
+[21:00:02] error: Class EXB_LoopA found more then once in objects derived from EXB_LoopB - circular inheritance isn't allowed.
+[21:00:03] warning: Unable to get type EXR:PlayerAliasScript referenced by the save game. Objects of this type will not be loaded.
+[21:00:03] warning: Variable ::Count_var on script EXB_BeaconScript loaded from save not found within the actual object. This variable will be skipped.
+[21:00:03] warning: Type of variable ::Range_var on script EXB_BeaconScript, which is Int, doesn't match the type loaded in the actual object. This variable will be skipped.
+[21:00:03] warning: Function EXB_BeaconScript..Tick in stack frame 0 in stack 1520 differs from the in-game resource files - using version from save
+[21:00:03] warning: Function EXB_BeaconScript..OldTick in stack frame 0 in stack 1521 doesn't exist in the in-game resource files - using version from save
+[21:00:04] VM is freezing...
+[21:00:04] VM is frozen
+[21:00:05] VM is thawing...
+[21:00:06] [EXB] quest started, version 1.0.0
+[21:01:10] error: Cannot call GetReference() on a None object, aborting function call
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.PlaceBeacon() - "EXB_BeaconScript.psc" Line 41
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.OnTimer() - "EXB_BeaconScript.psc" Line 22
+[21:01:10] warning: Assigning None to a non-object variable named "::temp4"
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.PlaceBeacon() - "EXB_BeaconScript.psc" Line 41
+[21:01:12] error: Unable to call GetDistance - no native object bound to the script object, or object is of incorrect type
+stack:
+	[Active effect 2 on  (00000014)].EXB_GlowEffectScript.OnEffectFinish() - "EXB_GlowEffectScript.psc" Line 15
+[21:01:15] error: alias Beacons on quest EXB_BeaconQuest (02000801): Cannot add a None reference to the alias.
+stack:
+	[alias Beacons on quest EXB_BeaconQuest (02000801)].RefCollectionAlias.AddRef() - "<native>" Line ?
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.TrackBeacon() - "EXB_BeaconScript.psc" Line 60
+[21:01:20] error: Cannot access an element of a None array
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.NextBeacon() - "EXB_BeaconScript.psc" Line 77
+[21:01:21] error: Array index 3 is out of range (0-2)
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.NextBeacon() - "EXB_BeaconScript.psc" Line 80
+[21:01:22] error: Cannot divide by zero
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.AverageRange() - "EXB_BeaconScript.psc" Line 95
+[21:01:25] error: Cannot set the value of a constant GlobalVariable
+stack:
+	[EXB_RangeGlobal (02000805)].GlobalVariable.SetValue() - "<native>" Line ?
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.SetRange() - "EXB_BeaconScript.psc" Line 103
+[21:01:30] error:  (0200081A): does not have 3d and cannot have an effect shader played on it.
+stack:
+	[ (0200081A)].ObjectReference.PlayEffectShader() - "<native>" Line ?
+	[ (0200081A)].EXB_LampScript.OnLoad() - "EXB_LampScript.psc" Line 12
+[21:01:40] error: Unbound native function "GetBeaconVersion" called
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.OnQuestInit() - "EXB_BeaconScript.psc" Line 9
+[21:02:00] error: Stack too deep (infinite recursion likely) - aborting call and returning None
+stack:
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.Search() - "EXB_BeaconScript.psc" Line 120
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.Search() - "EXB_BeaconScript.psc" Line 121
+[21:03:00] warning: Count of 105 stacks is over our warning threshold, dumping stacks:
+	Frame count: 2, State: Running, Type: Normal
+	[EXB_BeaconQuest (02000801)].EXB_BeaconScript.Search() - "EXB_BeaconScript.psc" Line 121
+[21:04:00] Saving game...

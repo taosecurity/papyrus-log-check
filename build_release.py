@@ -26,6 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = [
     "papyrus_log_check.py", "README.md", "AGENTS.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
     "examples/example-beacon.logrules.json", "examples/Papyrus.0.log", "examples/starter-mymod.logrules.json",
+    "examples/starter-pack-sample.log",
+    "rules/papyrus-runtime-errors.logrules.json", "rules/papyrus-scripts-and-properties.logrules.json",
+    "rules/papyrus-saves-and-load.logrules.json",
     "tests/test_papyrus_log_check.py",
 ]
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)

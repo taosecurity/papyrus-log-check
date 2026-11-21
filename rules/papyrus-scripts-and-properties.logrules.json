@@ -1,0 +1,30 @@
+{
+  "mod": "Papyrus scripts and properties",
+  "version": "1.0.0",
+  "about": "Starter rule pack. It explains the messages the game writes when a script file is missing or when a script and its plugin disagree about properties. Its rules are explain rules, so a match shows as FOUND and never fails a run. The base game writes many of these lines too, so look for your own script names in the matching lines.",
+  "source": "The wording follows the Creation Kit wiki page 'Papyrus Runtime Errors' and the lines Starfield writes to Papyrus.0.log.",
+  "plugins": ["Starfield.esm"],
+  "prefix": "^\\[",
+  "explain": [
+    {"id": "missing-script", "re": "Cannot open store for class \"[^\"]+\", missing file\\?",
+     "means": "The game looked for a script's .pex file and couldn't find it. In a packaged mod, the file is missing from the archive or sits at the wrong path (it belongs under Scripts\\, with a namespace folder if the script has one)."},
+    {"id": "base-types", "re": "Unable to bind script \\S+ to .* because their base types do not match",
+     "means": "The game couldn't attach a script to an object. It often comes right after a missing-script line for the same script. Otherwise the script extends a different type than the object it is attached to, for example a Quest script on an object reference."},
+    {"id": "unbound-native", "re": "Unbound native function \"[^\"]+\" called",
+     "means": "A script called a built-in function that nothing provides. That usually means a script extender plugin (a .dll) that the mod needs is missing, out of date or didn't load."},
+    {"id": "property-removed", "re": "cannot be initialized because the script no longer contains that property|does not have a property named \\S+, property skipped",
+     "means": "The plugin fills a property that the script no longer has. The script was changed after its properties were filled in the Creation Kit. Open the script's properties in the Creation Kit and save the plugin again."},
+    {"id": "property-read-only", "re": "Property \\S+ on object .* is read-only, property skipped",
+     "means": "The plugin fills a property that the script now marks read-only. The script was changed after its properties were filled."},
+    {"id": "property-type", "re": "The type of property \\S+ on object .* does not match",
+     "means": "The plugin fills a property with a value of the wrong type, for example a quest where the script expects an actor. The script was changed, or the property points at the wrong record."},
+    {"id": "property-unbound", "re": "cannot be bound because .* is not the right type",
+     "means": "A property couldn't be filled when the script started. The value is an alias that was never filled (<nullptr alias>), a record that isn't loaded (<nullptr form>, often from a plugin that isn't active) or a record of the wrong type."},
+    {"id": "struct-changed", "re": "Struct does not have a variable with the name|Struct type \\S+ does not contain a variable named",
+     "means": "Two scripts disagree about a struct's members, so one of them is out of date. Compile both again."},
+    {"id": "signature-mismatch", "re": "Overridden function \\S+ in object \\S+ does not have the same signature",
+     "means": "A script overrides a function of its parent script with different parameters or return type. One of the two is out of date and needs to be compiled again."},
+    {"id": "circular-inheritance", "re": "circular inheritance isn't allowed",
+     "means": "Scripts extend each other in a loop. One of them is out of date and needs to be compiled again."}
+  ]
+}

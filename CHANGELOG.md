@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.4.0 (2026-11-20)
+
+### What's new
+
+papyrus-log-check now comes with a starter rule pack. Three ready rule files in the new `rules` folder explain, in plain words, the error and warning lines that Starfield's Papyrus engine writes, so you can get something useful out of any Papyrus log before you write a rule file of your own.
+
+The pack uses a new kind of rule, `explain`. A match shows as FOUND, with its explanation and the script that raised the error, and it never fails a run. Runs with `--root` now also say which rule files they skipped because the mod's plugin isn't active.
+
+### Example
+
+    > python papyrus_log_check.py examples\starter-pack-sample.log --rules rules\papyrus-runtime-errors.logrules.json --rules rules\papyrus-scripts-and-properties.logrules.json --rules rules\papyrus-saves-and-load.logrules.json
+    papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    starter-pack-sample.log
+      FOUND      Papyrus runtime errors 1.0.0
+      FOUND      Papyrus saves and engine load 1.0.0
+      FOUND      Papyrus scripts and properties 1.0.0
+      FLAG       suspended stacks: 1 line(s), first starter-pack-sample.log:62
+    Report: ...\out\logcheck-20261120-220344-run20261120-220538.txt
+    JSON:   ...\out\logcheck-20261120-220344-run20261120-220538.json
+
+The report explains each line it found, for example:
+
+       FOUND     explain none-object: 1 found
+                 (A script called a function on a variable or property that was empty (None). The usual cause is a property that was never filled in the Creation Kit, or an object that was deleted or not loaded yet. The script skipped that call and went on.)
+                 starter-pack-sample.log:24  [21:01:10] error: Cannot call GetReference() on a None object, aborting function call
+                    at [EXB_BeaconQuest (02000801)].EXB_BeaconScript.PlaceBeacon() - "EXB_BeaconScript.psc" Line 41
+
+### Changes
+
+- `rules/papyrus-runtime-errors.logrules.json` explains 10 runtime errors, such as a call on a None object, array mistakes, dividing by zero and "Stack too deep".
+- `rules/papyrus-scripts-and-properties.logrules.json` explains 10 messages about missing script files, scripts attached to the wrong kind of object, missing native functions, and properties that a script and its plugin disagree about.
+- `rules/papyrus-saves-and-load.logrules.json` explains 6 warnings about saves made with other script versions, and the warning that the script engine was overloaded.
+- `examples/starter-pack-sample.log` is a made-up log with a line for every pack rule. The tests check that each rule matches its own line and no other.
+- Rule files can have `explain` rules. A match is FOUND, which is shown with the rule's `means` and never fails the mod or changes the exit code. A mod whose explain rules match and whose other rules pass is FOUND.
+- Each line an explain rule finds names the script behind the error (the first script line of the stack that follows it), in the report and in the JSON (`at`).
+- `Starfield.esm` always counts as active, because the game always loads it and never lists it in plugins.txt. A rule file about the game's own messages names it as its plugin.
+- With `--root`, each rule file whose plugin isn't active now gets a `NOT LOADED` line in the summary and in a short list at the end of the report, and the JSON lists them in `not_loaded`. Before, they were left out without a word, so a run that checked nothing looked empty.
+- AGENTS.md says that the `--set-version` example prints FAIL when the log shows another version, and what a `--root` run prints for mods that aren't loaded.
+
+### Download
+
+Download `papyrus-log-check-0.4.0.zip` below, unpack it and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
+
 ## 0.3.2 (2026-11-20)
 
 ### What's new

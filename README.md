@@ -1,6 +1,6 @@
 # papyrus-log-check
 
-papyrus-log-check tells you, after a test session, whether your Starfield mod's scripts did what they should. You write a short rule file that lists the log lines your mod ought to write, and the tool reads the game's Papyrus log and marks each rule PASS, FAIL or NOT SEEN. It also points out script errors that name your mod, crash logs and signs that the script engine fell behind.
+papyrus-log-check tells you, after a test session, whether your Starfield mod's scripts did what they should. You write a short rule file that lists the log lines your mod ought to write, and the tool reads the game's Papyrus log and marks each rule PASS, FAIL or NOT SEEN. It also points out script errors that name your mod, crash logs and signs that the script engine fell behind. Its starter rule pack explains the game's common Papyrus error lines in plain words, with no rule file of your own.
 
 Download the latest zip from [Releases](https://github.com/taosecurity/papyrus-log-check/releases), unpack it, open a Command Prompt in the folder and run the built-in example first:
 
@@ -16,11 +16,11 @@ The release zip holds a made-up log and a rule file for a made-up mod called Exa
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json
-papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   PASS       Example Beacon 1.0.0
-Report: ...\out\logcheck-20261109-095824-run20261120-152609.txt
-JSON:   ...\out\logcheck-20261109-095824-run20261120-152609.json
+Report: ...\out\logcheck-20261109-095824-run20261120-220538.txt
+JSON:   ...\out\logcheck-20261109-095824-run20261120-220538.json
 ```
 
 The summary gives one line per mod. The full text report in `out\` shows each rule and the log lines that matched it:
@@ -53,7 +53,7 @@ python papyrus_log_check.py "C:\Users\<you>\Documents\My Games\Starfield\Logs\Sc
 The tool is one Python script that uses only Python's standard library, so there is nothing else to install. It needs Python 3.9 or newer and works on Windows and Linux (for example, on logs copied from a Steam Deck). It only reads: it never changes the logs or the rule files.
 
 1. Install Python 3.9 or newer (the newest version is a good choice) from [python.org](https://www.python.org/downloads/). On the first screen of the installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type `python --version`. It should print a version number.
-2. Download `papyrus-log-check-0.3.2.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
+2. Download `papyrus-log-check-0.4.0.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
 3. Open the unpacked folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A Command Prompt window opens in that folder, ready for the commands in this README.
 4. Run the example command at the top of this page. It should print `PASS       Example Beacon 1.0.0`.
 
@@ -84,6 +84,50 @@ bLoadDebugInformation=1
 Start the game, play the part you want to check, and quit. The logs are in `Documents\My Games\Starfield\Logs\Script\`: `Papyrus.0.log` is the newest session, `Papyrus.1.log` is the one before, and so on. The tool doesn't look for them by itself: you give it the file, folder or zip to read.
 
 Your mod's own lines come from `Debug.Trace` calls in its scripts. If you compile with the `-release` flag, the compiler removes every `Debug` call, so nothing of yours reaches the log.
+
+## Starter rule pack
+
+You don't need a rule file of your own to get something out of the tool. The `rules\` folder holds three ready rule files that explain, in plain words, the error and warning lines the game's Papyrus engine writes. They work on any Papyrus log, with or without mods:
+
+| Rule file | What it explains |
+|---|---|
+| [`rules/papyrus-runtime-errors.logrules.json`](rules/papyrus-runtime-errors.logrules.json) | Errors while a script runs: a call on an empty (None) variable, an object that no longer exists, an empty reference put into an alias, array mistakes, dividing by zero, None stored in a number or text variable, changing a constant global, an effect played on an object that isn't drawn, and runaway recursion ("Stack too deep"). |
+| [`rules/papyrus-scripts-and-properties.logrules.json`](rules/papyrus-scripts-and-properties.logrules.json) | A missing script file ("Cannot open store ... missing file?"), a script attached to the wrong kind of object, a built-in function that nothing provides (usually a missing script extender plugin), properties that the script and the plugin disagree about, and scripts that are out of date with each other. |
+| [`rules/papyrus-saves-and-load.logrules.json`](rules/papyrus-saves-and-load.logrules.json) | Warnings when a save was made with other versions of the scripts (a mod was updated or removed), and the warning that the script engine was overloaded and dumped its stacks. |
+
+Their rules are **explain** rules. A rule that matches shows as FOUND, with its explanation, the first matching lines and, under each error, the script that raised it (`at ...`). FOUND never fails a run, so the exit code stays 0. Each file names `Starfield.esm` as its plugin, which the game always loads, so the pack is checked whatever your plugins.txt says.
+
+The base game and most mods write some of these lines in every session, so a FOUND is not a fault by itself. Look at the `at` line to see whose script it is, and read the explanation when it names one of yours. The wording of each rule follows the Creation Kit wiki page "Papyrus Runtime Errors" and the lines Starfield actually writes.
+
+The release zip has a made-up log, `examples\starter-pack-sample.log`, with one line for each rule. This is a real run of the whole pack on it:
+
+```
+> python papyrus_log_check.py examples\starter-pack-sample.log --rules rules\papyrus-runtime-errors.logrules.json --rules rules\papyrus-scripts-and-properties.logrules.json --rules rules\papyrus-saves-and-load.logrules.json
+papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+starter-pack-sample.log
+  FOUND      Papyrus runtime errors 1.0.0
+  FOUND      Papyrus saves and engine load 1.0.0
+  FOUND      Papyrus scripts and properties 1.0.0
+  FLAG       suspended stacks: 1 line(s), first starter-pack-sample.log:62
+Report: ...\out\logcheck-20261120-220344-run20261120-220538.txt
+JSON:   ...\out\logcheck-20261120-220344-run20261120-220538.json
+```
+
+The full report explains each line it found:
+
+```
+== Papyrus runtime errors 1.0.0: FOUND
+   Rules: rules\papyrus-runtime-errors.logrules.json
+   Plugin: Starfield.esm (active)
+   Lines read: 36 (first starter-pack-sample.log:1, last starter-pack-sample.log:65)
+   FOUND     explain none-object: 1 found
+             (A script called a function on a variable or property that was empty (None). The usual cause is a property that was never filled in the Creation Kit, or an object that was deleted or not loaded yet. The script skipped that call and went on.)
+             starter-pack-sample.log:24  [21:01:10] error: Cannot call GetReference() on a None object, aborting function call
+                at [EXB_BeaconQuest (02000801)].EXB_BeaconScript.PlaceBeacon() - "EXB_BeaconScript.psc" Line 41
+...
+```
+
+On the sample log every rule is FOUND. On a real log most rules find nothing, and those show as `PASS ... 0 found`. To check your own log, give the same three `--rules` with your log in place of the sample. You can also give them together with your mod's own rule file. Errors whose stack names your scripts already fail your mod through its `scripts` pattern. For a message that names the script itself, such as a missing script file, you can copy the pattern into your rule file's `forbid` list with your own script name in it, so that the line fails your mod.
 
 ## Add logging to a Creation Kit mod
 
@@ -129,11 +173,11 @@ Copy it, change `mod`, `version`, `plugins`, `prefix` and the patterns to your o
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\starter-mymod.logrules.json
-papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   NOT SEEN   My Mod 0.1.0
-Report: ...\out\logcheck-20261109-095824-run20261120-152609-2.txt
-JSON:   ...\out\logcheck-20261109-095824-run20261120-152609-2.json
+Report: ...\out\logcheck-20261109-095824-run20261120-220538-2.txt
+JSON:   ...\out\logcheck-20261109-095824-run20261120-220538-2.json
 ```
 
 ## What it can read
@@ -148,7 +192,7 @@ You can give it any of these three kinds of input:
 
 A folder or zip may also hold these files:
 
-- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked.
+- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. `Starfield.esm` always counts as active, because the game always loads it and never lists it there.
 - **Crash logs** (`Crashlog*.txt`, `crash-*.log`, or files in a `crashlogs` folder) are listed as FLAG lines.
 - **An SFSE plugin's own log** is checked when a rule file names it in `logs`.
 
@@ -164,12 +208,12 @@ python papyrus_log_check.py --logs-dir FOLDER --rules FILE
 |---|---|
 | `INPUT` | This is the log file, folder or zip to check (see above). |
 | `--rules FILE` | This names a rule file to check against. Repeat it, or give a comma list, for several mods. |
-| `--root FOLDER` | If you keep many mods as `<FOLDER>\<project>\testplan\logrules.json` (or one level deeper, `<FOLDER>\<group>\<project>\...`), this option finds all of their rule files. Without `--mods`, only mods whose plugin is active in `plugins.txt` are reported. The default is the current folder, and it is used only when no `--rules` is given. |
+| `--root FOLDER` | If you keep many mods as `<FOLDER>\<project>\testplan\logrules.json` (or one level deeper, `<FOLDER>\<group>\<project>\...`), this option finds all of their rule files. Without `--mods`, only mods whose plugin is active in `plugins.txt` are checked. Each of the others gets one `NOT LOADED` line in the summary and in a short list at the end of the report. The default is the current folder, and it is used only when no `--rules` is given. |
 | `--mods A,B` | With `--root`, this checks only the project folders you name. |
 | `--logs-dir FOLDER` | When no INPUT is given, this checks the newest `.zip` in the folder. "Newest" goes by the `yyyymmdd-hhmmss` stamp in the file name, or else by file time. The environment variable `PAPYRUS_LOG_CHECK_LOGS` does the same. |
 | `--out FOLDER` | This sets where the reports go. The default is `out\` next to the script. |
 | `--max-lines N` | This sets how many matching lines the text report shows per rule. The default is 5, and the JSON report keeps up to 50. |
-| `--set-version MyMod=0.9.1` | This checks a mod as another version than its rule file says (give the mod name or project folder). It is for rechecking older logs, and you can repeat it. |
+| `--set-version MyMod=0.9.1` | This checks a mod as another version than its rule file says (give the mod name or project folder). It is for rechecking older logs, and you can repeat it. When the log was written by yet another version, a rule with `{version}` FAILs, and the report shows the version the log has. |
 | `--verbose` | This prints a troubleshooting log on stderr (see below). |
 | `--log FILE` | This writes the same troubleshooting log to FILE, for example `--log papyrus-log-check.log.txt`. |
 | `--version` | This prints the version and license, then exits. |
@@ -179,8 +223,8 @@ When a rule with `{version}` finds nothing, the report also shows the same line 
 Each run writes two files, named after the input's time stamp and the time of the run, so nothing is ever overwritten. A second run in the same second gets `-2` added, as in the starter example above.
 
 ```
-logcheck-20261109-095824-run20261120-152609.txt   plain-text report
-logcheck-20261109-095824-run20261120-152609.json  the same data for other tools
+logcheck-20261109-095824-run20261120-220538.txt   plain-text report
+logcheck-20261109-095824-run20261120-220538.json  the same data for other tools
 ```
 
 The exit code tells scripts what happened:
@@ -221,7 +265,7 @@ Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examp
 | Field | What it means |
 |---|---|
 | `mod`, `version` | The report shows them. `{version}` in any regex is replaced by the version, so a wrong build shows up as a FAIL. |
-| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. |
+| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. `Starfield.esm` always counts as active, so a rule file about the game's own messages names it. |
 | `dlls` | These are the DLL names of an SFSE plugin. Without a DLL listing, `.dll` files in the input count as installed. Give `plugins`, `dlls` or both. |
 | `logs` | These are log file names to check instead of the Papyrus logs, for example `["my_sfse_plugin.log"]`. |
 | `names` | These are words to look for in the input's name. A match shows as "named in note" in the summary. |
@@ -230,8 +274,9 @@ Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examp
 | `expect` | These are lines that should appear. Each has an `id`, a regex `re`, an optional `min` (default 1) and an optional `always` (the line must appear whenever the mod logged at all). |
 | `order` | Each entry lists `expect` ids whose first lines must appear in that order. |
 | `forbid` | These are lines that must not appear. Each has an `id` and a regex `re`. |
+| `explain` | These are lines worth knowing about, which don't fail the mod. Each has an `id`, a regex `re` and a `means` that says what the line means. The starter rule pack is made of them. |
 | `ignore` | These regexes (or `{"re", "why"}` pairs) match errors of the mod's scripts that are known and harmless. |
-| `show`, `means` | These hold free text for people. The report prints `means` when a rule isn't PASS. |
+| `show`, `means` | These hold free text for people. The report prints `means` when a rule isn't PASS. Other fields, such as the pack's `about` and `source`, are notes for people and are not read. |
 
 Regexes use Python syntax and match anywhere in a log line. Double the backslashes in JSON. Papyrus sometimes changes the case of a string it has seen before ("Started" can come out as "started"), so use `(?i:...)` around such words.
 
@@ -245,11 +290,12 @@ Package checks
 
 ## Results
 
-Each mod gets one of four results:
+Each mod gets one of five results:
 
 - **NOT LOADED** means none of its plugins is active in plugins.txt. Nothing else is checked.
 - **NOT SEEN** means no line matches `prefix` and no rule passed. Usually the mod's features weren't tested, or the debug lines don't reach the log.
 - **FAIL** means at least one rule failed.
+- **FOUND** means no rule failed, but at least one `explain` rule matched. Read its lines in the report. It doesn't change the exit code.
 - **PASS** means the mod logged and no rule failed. Some rules may still be NOT SEEN.
 
 Each rule gets its own result:
@@ -257,6 +303,7 @@ Each rule gets its own result:
 - An **expect** rule passes when its line is found at least `min` times. It fails when an `always` line is missing, or when the line is found fewer than `min` times. It is NOT SEEN when the line isn't found at all, which usually means the feature wasn't tested.
 - An **order** rule passes when all its lines are found in order, and fails when they are found out of order. It is NOT SEEN when some of them aren't found.
 - A **forbid** rule fails when its line is found. It passes when the line isn't found and the mod logged, and it is NOT SEEN when the mod never logged.
+- An **explain** rule is FOUND when its line is found, and never fails. Like a forbid rule, it passes when the line isn't found and the mod logged, and it is NOT SEEN when the mod never logged.
 - The **script errors** check fails when an `error:` line names the mod's scripts, and passes when none does.
 
 Warnings that name the mod's scripts are listed, but they don't fail the mod. Errors from other scripts (the base game, other mods), and errors on a mod's `ignore` list, are only counted.
@@ -277,14 +324,14 @@ The log says what was read (the input, how many logs, plugins.txt, the manifest)
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
-papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
-log: papyrus-log-check 0.3.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
+papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+log: papyrus-log-check 0.4.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
 log: arguments: examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
 log: input: log file examples\Papyrus.0.log: 1 files, 1 Papyrus log(s), plugins.txt none, manifest none
-log: rule file examples\example-beacon.logrules.json: mod Example Beacon 1.0.0, 3 expect, 1 forbid, 1 order rule(s)
+log: rule file examples\example-beacon.logrules.json: mod Example Beacon 1.0.0, 3 expect, 1 forbid, 1 order, 0 explain rule(s)
 log: Papyrus errors and warnings: 2
 log: Example Beacon: PASS (plugin unknown, 2 mod log line(s))
-log: wrote ...\out\logcheck-20261109-095824-run20261120-152609-3.txt and ...\out\logcheck-20261109-095824-run20261120-152609-3.json; overall OK
+log: wrote ...\out\logcheck-20261109-095824-run20261120-220538-3.txt and ...\out\logcheck-20261109-095824-run20261120-220538-3.json; overall OK
 ...
 ```
 

@@ -591,5 +591,190 @@ class TestVersionText(unittest.TestCase):
         self.assertIn("MIT license", buf.getvalue())
 
 
+TOOL_DIR = os.path.dirname(HERE)
+PACK = [os.path.join(TOOL_DIR, "rules", n) for n in
+        ("papyrus-runtime-errors.logrules.json", "papyrus-scripts-and-properties.logrules.json",
+         "papyrus-saves-and-load.logrules.json")]
+SAMPLE = os.path.join(TOOL_DIR, "examples", "starter-pack-sample.log")
+# How many lines of examples\starter-pack-sample.log each pack rule must match: every rule has its own line(s),
+# and no rule matches another rule's line.
+PACK_COUNTS = {
+    "none-object": 1, "no-native-object": 1, "none-into-alias": 1, "none-array": 1, "array-index": 1,
+    "divide-by-zero": 1, "assigning-none": 1, "constant-global": 1, "no-3d": 1, "stack-too-deep": 1,
+    "missing-script": 1, "base-types": 1, "unbound-native": 1, "property-removed": 2, "property-read-only": 1,
+    "property-type": 1, "property-unbound": 1, "struct-changed": 1, "signature-mismatch": 1,
+    "circular-inheritance": 1,
+    "function-changed": 1, "function-removed": 1, "type-missing": 1, "variable-type": 1, "variable-removed": 1,
+    "stacks-over-threshold": 1,
+}
+
+
+def run_quiet(argv):
+    """main() with stdout captured: (exit code, stdout text, report JSON or None, report text or None)."""
+    import contextlib
+    import io
+    out = next((argv[k + 1] for k, a in enumerate(argv) if a == "--out"), None)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = plc.main(argv)
+    data = txt = None
+    if out and os.path.isdir(out):
+        newest = sorted((f for f in os.listdir(out)), key=lambda f: os.path.getmtime(os.path.join(out, f)))
+        js = [f for f in newest if f.endswith(".json")]
+        tx = [f for f in newest if f.endswith(".txt")]
+        data = json.loads(read(os.path.join(out, js[-1]))) if js else None
+        txt = read(os.path.join(out, tx[-1])) if tx else None
+    return code, buf.getvalue(), data, txt
+
+
+class TestStarterPack(unittest.TestCase):
+    """0.4.0: the starter rule pack in rules\\ (README "Starter rule pack") on the sample log in examples\\."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = os.path.join(self.tmp.name, "out")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def pack_args(self, log):
+        args = [log]
+        for p in PACK:
+            args += ["--rules", p]
+        return args + ["--out", self.out]
+
+    def test_every_pack_file_loads_and_is_documented(self):
+        ids = []
+        for p in PACK:
+            r = plc.load_rules(p)
+            plc.prepare(r)
+            self.assertEqual(r["plugins"], ["Starfield.esm"])
+            self.assertTrue(r["about"] and r["source"], p)
+            self.assertEqual((r["expect"], r["forbid"], r["order"]), ([], [], []), p)  # explain rules only
+            for x in r["explain"]:
+                self.assertTrue(x.get("means", "").endswith("."), f"{p}: {x['id']} needs a 'means' sentence")
+                ids.append(x["id"])
+        self.assertEqual(sorted(ids), sorted(PACK_COUNTS))   # ids are unique and all covered here
+
+    def test_sample_log_finds_every_rule_once_and_exits_0(self):
+        code, stdout, data, txt = run_quiet(self.pack_args(SAMPLE))
+        self.assertEqual(code, 0)   # FOUND never fails a run
+        self.assertEqual({m["status"] for m in data["mods"]}, {plc.FOUND})
+        counts = {x["id"]: x["count"] for m in data["mods"] for x in m["rules"]}
+        self.assertEqual(counts, PACK_COUNTS)
+        self.assertIn("  FOUND      Papyrus runtime errors 1.0.0", stdout)
+        self.assertIn("FOUND     explain none-object: 1 found", txt)
+
+    def test_lines_name_the_script_behind_the_error(self):
+        _, _, data, txt = run_quiet(self.pack_args(SAMPLE))
+        lines = {x["id"]: x["lines"] for m in data["mods"] for x in m["rules"]}
+        self.assertIn("EXB_BeaconScript.PlaceBeacon()", lines["none-object"][0]["at"])
+        # a built-in function's frame is passed over for the script that called it
+        self.assertIn("EXB_BeaconScript.TrackBeacon()", lines["none-into-alias"][0]["at"])
+        self.assertNotIn("at", lines["stacks-over-threshold"][0])   # a stack dump names many scripts
+        self.assertNotIn("at", lines["missing-script"][0])          # no stack follows that line
+        self.assertIn("   at [EXB_BeaconQuest (02000801)].EXB_BeaconScript.PlaceBeacon()", txt)
+
+    def test_clean_log_passes(self):
+        log = os.path.join(self.tmp.name, "Papyrus.0.log")
+        with open(log, "w", encoding="utf-8") as f:
+            f.write("[11/01/2026 - 09:00:00PM] Papyrus log opened (PC-64)\n[21:00:04] VM is freezing...\n"
+                    "[21:00:04] VM is frozen\n[21:00:05] [EXB] quest started, version 1.0.0\n")
+        code, stdout, data, txt = run_quiet(self.pack_args(log))
+        self.assertEqual(code, 0)
+        self.assertEqual({m["status"] for m in data["mods"]}, {plc.PASS})
+        self.assertIn("Lines read: 4", txt)
+
+    def test_starfield_esm_counts_as_loaded_without_a_plugins_txt_line(self):
+        folder = os.path.join(self.tmp.name, "logs")
+        os.makedirs(folder)
+        with open(SAMPLE, encoding="utf-8") as f:
+            text = f.read()
+        with open(os.path.join(folder, "Papyrus.0.log"), "w", encoding="utf-8") as f:
+            f.write(text)
+        with open(os.path.join(folder, "plugins.txt"), "w", encoding="utf-8") as f:
+            f.write("# The game never lists Starfield.esm here.\n*SomeMod.esm\n")
+        code, _, data, _ = run_quiet(self.pack_args(folder))
+        self.assertEqual(code, 0)
+        self.assertEqual({m["plugin_state"] for m in data["mods"]}, {"active"})
+        self.assertEqual({m["status"] for m in data["mods"]}, {plc.FOUND})
+
+
+class TestSource(unittest.TestCase):
+    def test_script_compiles_without_warnings(self):
+        """A stray backslash in a docstring gives a SyntaxWarning on every run (found while writing 0.4.0)."""
+        import warnings
+        with open(os.path.join(TOOL_DIR, "papyrus_log_check.py"), encoding="utf-8") as f:
+            source = f.read()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile(source, "papyrus_log_check.py", "exec")
+
+
+class TestExplainRules(Base):
+    """0.4.0: explain rules in a mod's own rule file."""
+
+    def test_explain_hit_is_found_and_does_not_fail(self):
+        rules = dict(RULES, expect=[], order=[], forbid=[], scripts="",
+                     explain=[{"id": "none", "re": "on a None object", "means": "Something was empty."}])
+        _, res = self.check(rules)
+        self.assertEqual(res["status"], plc.FOUND)
+        self.assertEqual(res["rules"][0]["count"], 2)
+
+    def test_fail_still_wins_over_found(self):
+        rules = dict(RULES, explain=[{"id": "none", "re": "on a None object"}])
+        _, res = self.check(rules)
+        self.assertEqual(res["status"], plc.FAIL)
+
+    def test_explain_miss_is_pass_when_the_mod_logged_else_not_seen(self):
+        miss = [{"id": "nothing", "re": "no such line anywhere"}]
+        _, res = self.check(dict(RULES, expect=[], order=[], forbid=[], scripts="", explain=miss))
+        self.assertEqual((res["status"], res["rules"][0]["status"]), (plc.PASS, plc.PASS))
+        _, res = self.check(dict(RULES, prefix="NEVERLOGGED:", expect=[], order=[], forbid=[], scripts="", explain=miss))
+        self.assertEqual((res["status"], res["rules"][0]["status"]), (plc.NOT_SEEN, plc.NOT_SEEN))
+
+    def test_bad_explain_rule_names_the_file(self):
+        path = os.path.join(self.dir, "bad.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(RULES, explain=[{"id": "x"}]), f)
+        with self.assertRaisesRegex(ValueError, "bad.json: explain rule 1 needs"):
+            plc.load_rules(path)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(RULES, explain=[{"id": "x", "re": "("}]), f)
+        with self.assertRaisesRegex(ValueError, "bad regex in explain 'x'"):
+            plc.prepare(plc.load_rules(path))
+
+
+class TestRootNotLoaded(Base):
+    """0.4.0 (clean-folder test of 0.3.2): with --root, a rule file whose plugin isn't active gets a NOT LOADED line."""
+
+    def test_not_loaded_line_report_section_and_json(self):
+        write_rules(self.root, "OffMod", dict(RULES, mod="Off Mod", version="0.2.0", plugins=["OffMod.esm"]))
+        write_rules(self.root, "Absent", dict(RULES, mod="Absent Mod", plugins=["Absent.esm"]))
+        code, stdout, data, txt = run_quiet([make_zip(self.dir), "--root", self.root, "--out", self.out])
+        self.assertEqual(code, 1)   # TestMod's own FAILs
+        self.assertEqual([m["mod"] for m in data["mods"]], ["Test Mod"])   # still not checked
+        self.assertEqual([(n["mod"], n["plugin_state"]) for n in data["not_loaded"]],
+                         [("Absent Mod", "missing"), ("Off Mod", "inactive")])
+        self.assertIn("  NOT LOADED Off Mod 0.2.0\n", stdout)
+        self.assertIn("  NOT LOADED Absent Mod 1.2.0\n", stdout)
+        self.assertIn("  NOT LOADED Off Mod 0.2.0  (OffMod.esm: inactive; rules " + os.path.join("OffMod", "testplan", "logrules.json"), txt)
+
+    def test_only_unloaded_mods_still_says_so(self):
+        """The clean-folder case: the only rule file is for an inactive plugin, so nothing is checked."""
+        root = os.path.join(self.dir, "only-off")
+        write_rules(root, "OffMod", dict(RULES, mod="Off Mod", plugins=["OffMod.esm"]))
+        code, stdout, data, _ = run_quiet([make_zip(self.dir), "--root", root, "--out", self.out])
+        self.assertEqual(code, 0)
+        self.assertEqual(data["mods"], [])
+        self.assertIn("NOT LOADED Off Mod 1.2.0", stdout)
+
+    def test_no_plugins_txt_lists_nothing_as_not_loaded(self):
+        write_rules(self.root, "OffMod", dict(RULES, mod="Off Mod", plugins=["OffMod.esm"]))
+        _, stdout, data, _ = run_quiet([make_zip(self.dir, plugins=None), "--root", self.root, "--out", self.out])
+        self.assertEqual(data["not_loaded"], [])
+        self.assertNotIn("NOT LOADED", stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
