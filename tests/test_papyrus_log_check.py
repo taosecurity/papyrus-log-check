@@ -1235,6 +1235,77 @@ class TestListings041Review(Base):
         self.assertEqual(pkg.sfse_dlls(), {"one.dll"})
 
 
+class TestBadInput042(Base):
+    """0.4.2 bug hunt: a bad folder or output path says what is wrong and what to do, not a raw [WinError n]."""
+
+    def run_main(self, argv):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = plc.main(argv)
+        return code, err.getvalue()
+
+    def zip_and_rules(self):
+        rules = os.path.join(self.dir, "r.json")
+        with open(rules, "w", encoding="utf-8") as f:
+            json.dump(RULES, f)
+        return make_zip(self.dir), rules
+
+    def test_a_missing_root_names_the_option(self):
+        z, _ = self.zip_and_rules()
+        code, err = self.run_main([z, "--root", os.path.join(self.dir, "nope"), "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("--root", err)
+        self.assertIn("is not a folder", err)
+        self.assertNotIn("WinError", err)
+
+    def test_a_missing_logs_dir_names_the_option(self):
+        _, rules = self.zip_and_rules()
+        code, err = self.run_main(["--logs-dir", os.path.join(self.dir, "nope"), "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("--logs-dir", err)
+        self.assertIn("is not a folder", err)
+        self.assertNotIn("WinError", err)
+
+    def test_an_out_path_that_is_a_file_says_what_to_do(self):
+        z, rules = self.zip_and_rules()
+        afile = os.path.join(self.dir, "afile.txt")
+        with open(afile, "w") as f:
+            f.write("x")
+        for out in (afile, os.path.join(afile, "sub")):
+            code, err = self.run_main([z, "--rules", rules, "--out", out])
+            self.assertEqual(code, 2)
+            self.assertIn("Can't write the report in", err)
+            self.assertIn("Give --out a folder you can write to", err)
+            self.assertNotIn("WinError", err)
+
+    def test_a_mod_name_the_console_cannot_show_does_not_stop_the_run(self):
+        import contextlib
+        import io
+        z, _ = self.zip_and_rules()
+        rules = os.path.join(self.dir, "cjk.json")
+        with open(rules, "w", encoding="utf-8") as f:
+            json.dump(dict(RULES, mod="Mod 名前"), f, ensure_ascii=False)
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+        with contextlib.redirect_stdout(console):
+            code = plc.main([z, "--rules", rules, "--out", self.out])
+        console.flush()
+        self.assertIn(code, (0, 1))
+        self.assertIn(b"Mod ??", raw.getvalue())
+
+    def test_a_rule_file_that_is_not_utf8_says_so(self):
+        z, _ = self.zip_and_rules()
+        bad = os.path.join(self.dir, "u16.json")
+        with open(bad, "w", encoding="utf-16") as f:
+            json.dump(RULES, f)
+        code, err = self.run_main([z, "--rules", bad, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("is not UTF-8 text", err)
+        self.assertNotIn("commas and quotes", err)
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 

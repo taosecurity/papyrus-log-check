@@ -413,6 +413,9 @@ def load_rules(path):
     with open(path, encoding="utf-8-sig") as f:
         try:
             r = json.load(f)
+        except UnicodeDecodeError as e:
+            raise ValueError(f"{path} is not UTF-8 text ({e.reason} at byte {e.start}). Save it as UTF-8 (a UTF-16 file from Notepad's "
+                             f"Unicode option won't do).")
         except ValueError as e:
             raise ValueError(f"{path} is not valid JSON ({e}). Check its commas and quotes.")
     if not isinstance(r, dict):
@@ -523,6 +526,9 @@ def find_rule_files(root, mods=None):
                 raise FileNotFoundError(f"There is no rule file for '{m}' (it looked for {p}).")
             out.append(p)
         return out
+    if not os.path.isdir(root):
+        raise FileNotFoundError(f"--root {root} is not a folder. Give --root the folder that holds your project folders, "
+                                f"or use --rules FILE.")
     out = []
     for d in sorted(os.listdir(root)):
         top = os.path.join(root, d)
@@ -980,6 +986,9 @@ def text_report(data, max_lines):
 
 def newest_zip(folder):
     """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time."""
+    if not os.path.isdir(folder):
+        raise FileNotFoundError(f"--logs-dir {folder} is not a folder. Give an existing folder that holds log zips "
+                                f"(or set PAPYRUS_LOG_CHECK_LOGS to one).")
     zips = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".zip")]
     if not zips:
         raise FileNotFoundError(f"There is no .zip in {folder}.")
@@ -1103,17 +1112,21 @@ def run(args):
         "overall": FAIL if any(r["status"] == FAIL for r in results) else "OK",
     }
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
-    os.makedirs(out_dir, exist_ok=True)
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
-    n = 2
-    while os.path.exists(base + ".txt") or os.path.exists(base + ".json"):  # two runs in one second
-        base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
-        n += 1
     report = text_report(data, args.max_lines)
-    with open(base + ".txt", "w", encoding="utf-8") as f:
-        f.write(report)
-    with open(base + ".json", "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=1, ensure_ascii=False)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        n = 2
+        while os.path.exists(base + ".txt") or os.path.exists(base + ".json"):  # two runs in one second
+            base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
+            n += 1
+        with open(base + ".txt", "w", encoding="utf-8") as f:
+            f.write(report)
+        with open(base + ".json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=1, ensure_ascii=False)
+    except OSError as e:
+        raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
+                         f"(a path that is not a file and has no characters Windows refuses).")
     Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
     print(safe(pkg.name))
@@ -1179,6 +1192,11 @@ def main(argv=None):
         print(BYLINE)
         print("Free software under the MIT license. It comes with no warranty.")
         return 0
+    for stream in (sys.stdout, sys.stderr):  # 0.4.2: a mod name the console's code page can't show prints as ? instead of stopping the run
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     print(BYLINE, file=sys.stderr)  # on stderr, so the summary on stdout stays the same for scripts
     try:
         Log.to_stderr = args.verbose
