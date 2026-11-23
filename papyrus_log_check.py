@@ -1029,6 +1029,17 @@ class _WriteStopped(ValueError):
     .txt that couldn't be removed); the write's error handler passes it on unchanged."""
 
 
+def _stop_if_names_refused(out_dir, created, e):
+    """At the refused-name limit: when this run already created a report file in out_dir, the folder is writable and
+    the names were refused because other runs were deleting files of those names, so say that instead of the
+    generic path text."""
+    if created:
+        raise _WriteStopped(f"Can't write the report in {out_dir}: {_REFUSED_TRIES} report names in a row were refused "
+                            f"({e.strerror or e}), although this run had just written a file there, so other runs or "
+                            f"programs are probably deleting reports in that folder. Wait for them to finish, then "
+                            f"run again, or give --out another folder.") from e
+
+
 def run(args):
     opened = []  # the Package, so it is closed even when the run stops on an error
     try:
@@ -1169,6 +1180,7 @@ def _run(args, opened):
     try:
         os.makedirs(out_dir, exist_ok=True)
         refused = 0
+        created = False  # this run has created a report file in out_dir, so the folder itself is writable
         for tries in range(_NAME_TRIES):
             # Two runs in one second: take the next free name pair (-2, -3, ...); lexists also sees a dangling link.
             base = stem if tries == 0 else f"{stem}-{tries + 1}"
@@ -1178,11 +1190,13 @@ def _run(args, opened):
                 f = open(base + ".txt", "x", encoding="utf-8")
             except FileExistsError:  # another run took the name between the check and now
                 continue
-            except PermissionError:  # Windows: a name another run is deleting; a folder we can't write repeats it
+            except PermissionError as e:  # Windows: a name another run is deleting; a folder we can't write repeats it
                 refused += 1
                 if refused >= _REFUSED_TRIES:
+                    _stop_if_names_refused(out_dir, created, e)
                     raise
                 continue
+            created = True
             with f:
                 f.write(report)
             kept.append(f.name)
@@ -1194,6 +1208,8 @@ def _run(args, opened):
                 f = None
                 try:
                     os.remove(kept[-1])
+                except FileNotFoundError:  # already gone (removed by someone else): nothing to clean up
+                    pass
                 except OSError as rm:
                     raise _WriteStopped(
                         f"Can't write the report in {out_dir}: the name {os.path.basename(base)}.json was taken while "
@@ -1203,6 +1219,7 @@ def _run(args, opened):
                 if isinstance(e, PermissionError):
                     refused += 1
                     if refused >= _REFUSED_TRIES:
+                        _stop_if_names_refused(out_dir, created, e)
                         raise
                 continue
             with f:
@@ -1228,9 +1245,13 @@ def _run(args, opened):
         if isinstance(e, _WriteStopped) or not isinstance(e, Exception):  # Ctrl+C and exit go on as they are
             raise
         if not isinstance(e, OSError):
+            if Log.file is not None:  # this run already has a log: point at it instead of asking for a rerun
+                ask = f"please report it at {URL}/issues with the log file {Log.file.name} attached."
+            else:
+                ask = (f"please run it again with --log FILE (a .txt file outside the input folder) and report it at "
+                       f"{URL}/issues with that log file attached.")
             raise ValueError(f"Can't write the report in {out_dir} ({type(e).__name__}: {e}). This is a bug in "
-                             f"{TOOL}: please run it again with --log papyrus-log-check.log.txt and report it at "
-                             f"{URL}/issues with that log file attached.{saved}") from e
+                             f"{TOOL}: {ask}{saved}") from e
         why = e.strerror or e
         if e.errno in _DISK_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "

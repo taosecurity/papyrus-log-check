@@ -111,7 +111,8 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   rule file (the message names the file and the field), a rule file that isn't UTF-8, a `--root`, `--logs-dir` or
   `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read.
   A failed report write also exits 2 and removes the half-written file. If only the `.json` fails, the complete `.txt`
-  stays and the error names it: trust a report pair only when the run exited 0 or 1. Exit 2 means no report pair; a
+  stays and the error names it. An unpaired `.txt` the run couldn't remove (another run took the `.json` name) is
+  also named, with a request to delete it. Trust a report pair only when the run exited 0 or 1. Exit 2 means no report pair; a
   `.txt` it kept is for a person to read, and scripts should ignore it.
 - **Log:** only when asked: `--verbose` to stderr, `--log FILE` to that file (overwritten each run; a name that
   would overwrite an input is refused).

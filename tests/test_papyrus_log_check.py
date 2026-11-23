@@ -1788,8 +1788,12 @@ class TestReviewRound8042(Base):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
         self.assertEqual(len(refused), plc._REFUSED_TRIES)
-        self.assertIn("Give --out a folder you can write to", err)
+        # Round 9: the run wrote (and removed) a .txt in that folder, so the folder isn't blamed.
+        self.assertIn("report names in a row were refused", err)
+        self.assertIn("other runs or programs are probably deleting reports in that folder", err)
+        self.assertNotIn("Give --out a folder you can write to", err)
         self.assertNotIn("is kept", err)
+        self.assertNotIn("Traceback", err)
         self.assertEqual(os.listdir(self.out), [])
 
     def test_an_unpaired_txt_that_cant_be_removed_is_named(self):
@@ -1827,8 +1831,77 @@ class TestReviewRound8042(Base):
         with mock.patch.object(plc.json, "dump", side_effect=TypeError("not serializable")):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        self.assertIn("please run it again with --log papyrus-log-check.log.txt and report it at", err)
+        # Round 9: the advice names no fixed log name (one in the input folder is refused).
+        self.assertIn("please run it again with --log FILE (a .txt file outside the input folder) and report it at", err)
+        self.assertNotIn("papyrus-log-check.log.txt", err)
         self.assertIn("with that log file attached.", err)
+
+
+class TestReviewRound9042(Base):
+    """0.4.2 /code-review round 9: an unpaired .txt that is already gone isn't reported as undeletable, the refused
+    limit after this run wrote a file says names were refused, and the bug text points at the run's own log."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def test_an_unpaired_txt_already_gone_moves_the_pair_to_the_next_name(self):
+        # Round 8 code treated FileNotFoundError like any other failed remove: exit 2, "Delete that file".
+        import builtins
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real_open = builtins.open
+        real_remove = os.remove
+        taken = []
+
+        def fake_open(path, *a, **k):
+            mode = k.get("mode", a[0] if a else "r")
+            if str(path).endswith(".json") and "logcheck-" in str(path) and mode == "x" and not taken:
+                taken.append(path)
+                raise FileExistsError(errno.EEXIST, "exists")
+            return real_open(path, *a, **k)
+
+        def fake_remove(path):
+            if str(path).endswith(".txt") and "logcheck-" in str(path):
+                real_remove(path)  # someone else removed it first
+                raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+            return real_remove(path)
+        with mock.patch("builtins.open", fake_open), mock.patch.object(plc.os, "remove", fake_remove):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1), err)
+        self.assertNotIn("Delete that file", err)
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 2, names)
+        self.assertTrue(names[0].endswith("-2.json") and names[1].endswith("-2.txt"), names)
+
+    def test_txt_names_refused_before_any_write_still_blame_the_folder(self):
+        # The names-refused text is only for a run that already wrote in the folder.
+        import builtins
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real_open = builtins.open
+
+        def fake_open(path, *a, **k):
+            mode = k.get("mode", a[0] if a else "r")
+            if "logcheck-" in str(path) and mode == "x":
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", fake_open):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("report names in a row were refused", err)
+
+    def test_the_bug_text_names_the_log_this_run_already_has(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        log = os.path.join(self.dir, "my-run-log.txt")
+        with mock.patch.object(plc.json, "dump", side_effect=TypeError("not serializable")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out, "--log", log])
+        self.assertEqual(code, 2)
+        self.assertIn(f"please report it at {plc.URL}/issues with the log file {os.path.abspath(log)} attached.", err)
+        self.assertNotIn("run it again with --log", err)
 
 
 class TestDocsVersion(unittest.TestCase):
