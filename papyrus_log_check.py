@@ -35,7 +35,7 @@ import traceback
 import zipfile
 
 TOOL = "papyrus-log-check"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"
@@ -46,6 +46,18 @@ PASS, FAIL, NOT_SEEN, NOT_LOADED = "PASS", "FAIL", "NOT SEEN", "NOT LOADED"
 FOUND = "FOUND"   # 0.4.0: an "explain" rule matched; worth reading, but not a failure
 # The base game's master file is always loaded, and the game never lists it in plugins.txt.
 ALWAYS_LOADED = {"starfield.esm"}
+# 0.4.1: the other official masters (the DLC, the SFBGS* updates and BlueprintShips-<official>.esm) are also
+# loaded by the game whenever their file is in Data, with no plugins.txt line.
+OFFICIAL_RE = re.compile(r"^(starfield|constellation|oldmars|shatteredspace|sfbgs[0-9a-z]{3})\.esm$", re.I)
+BLUEPRINT_RE = re.compile(r"^blueprintships-(.+)$", re.I)
+
+
+def is_official(name):
+    """An official master the game loads by itself. BlueprintShips-X.esm counts only when X.esm is official."""
+    if OFFICIAL_RE.match(name):
+        return True
+    m = BLUEPRINT_RE.match(name)
+    return bool(m and OFFICIAL_RE.match(m.group(1)))
 
 STAMP_RE = re.compile(r"(\d{8}-\d{6})")
 PAPYRUS_RE = re.compile(r"(?:^|/)papyrus\.(\d+)\.log$", re.I)
@@ -137,6 +149,9 @@ def clean_manifest(m):
     if "listing" in out and not isinstance(out["listing"].get("sfsePluginDlls", []), list):
         Log.write("manifest.json: listing.sfsePluginDlls should be a list; ignored")
         out["listing"] = {}
+    if "listing" in out and not isinstance(out["listing"].get("dataPlugins", []), list):
+        Log.write("manifest.json: listing.dataPlugins should be a list; ignored")
+        out["listing"] = {k: v for k, v in out["listing"].items() if k != "dataPlugins"}
     return out
 
 
@@ -292,6 +307,14 @@ class Package:
         dlls = {os.path.basename(k) for k in self.entries if k.endswith(".dll")}
         return dlls or None
 
+    def data_plugins(self):
+        """0.4.1: the plugin files in the game's Data folder (lower case), from a collector's manifest listing
+        (listing.dataPlugins). None when the input has no such listing."""
+        listing = self.manifest.get("listing", {}).get("dataPlugins")
+        if listing is None:
+            return None
+        return {str(d.get("name", "")).lower() for d in listing if isinstance(d, dict)}
+
     def crash_logs(self):
         out = []
         for key, (_, norm) in sorted(self.entries.items()):
@@ -387,13 +410,23 @@ def check_shape(r):
         for n, e in enumerate(r[kind], 1):
             if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("re"), str):
                 raise ValueError(f"{path}: {kind} rule {n} needs an \"id\" and an \"re\" (both text in quotes).")
-            if "min" in e and (not isinstance(e["min"], int) or e["min"] < 1):
-                raise ValueError(f"{path}: {kind} rule '{e['id']}' has 'min' {e['min']!r}; it should be a whole number, 1 or more.")
+            # 0.4.1: 'min' and 'always' belong to expect rules. These checks run before the generic 'min' type
+            # check, so a bad 'min' on an explain or forbid rule gives one clear error, not two in turn.
             if kind == "explain":
+                # 'min': 1 and 'always': false say what an explain rule does anyway, so they are accepted.
+                noop = {"min": 1, "always": False}
+                for key in ("min", "always"):
+                    if key in e and not (type(e[key]) is type(noop[key]) and e[key] == noop[key]):
+                        raise ValueError(f"{path}: explain rule '{e['id']}' has '{key}' {e[key]!r}, which only expect rules use. "
+                                         f"Remove '{key}' from it, or make it an expect rule.")
+            elif kind == "forbid":
                 for key in ("min", "always"):
                     if key in e:
-                        raise ValueError(f"{path}: explain rule '{e['id']}' has '{key}', which only expect rules use. "
-                                         f"Remove '{key}' from it, or make it an expect rule.")
+                        raise ValueError(f"{path}: forbid rule '{e['id']}' has '{key}', which only expect rules use "
+                                         f"(a forbid rule fails on any matching line). Remove '{key}' from it, "
+                                         f"or make it an expect rule.")
+            if "min" in e and (not isinstance(e["min"], int) or e["min"] < 1):
+                raise ValueError(f"{path}: {kind} rule '{e['id']}' has 'min' {e['min']!r}; it should be a whole number, 1 or more.")
     if not isinstance(r["order"], list) or not all(isinstance(q, list) and all(isinstance(x, str) for x in q) for q in r["order"]):
         raise ValueError(f"{path}: 'order' should be a list of lists of expect ids, like [[\"start\", \"done\"]].")
     if not isinstance(r["ignore"], list) or not all(isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("re"), str))
@@ -529,11 +562,16 @@ def plugin_state(rules, pkg):
     .esm plugins are looked up in plugins.txt, SFSE DLLs in the DLL listing. Starfield.esm is always active
     (0.4.0): the game loads it without listing it, so a rule file for the base game's own messages always runs.
     It counts only for a rule file whose only plugins are always-loaded ones: a file that also names its own
-    plugins or DLLs is active only when one of those is."""
+    plugins or DLLs is active only when one of those is.
+    0.4.1: the other official masters (is_official) are always loaded too, the same way, when their file is in
+    Data: the collector's listing.dataPlugins decides, and without that listing they count as loaded, as
+    Starfield.esm always does."""
     states = []
-    own = [p for p in rules["plugins"] if p.lower() not in ALWAYS_LOADED]
+    own = [p for p in rules["plugins"] if not is_official(p)]
     if rules["plugins"] and not own and not rules["dlls"]:
-        states.append(True)
+        data = pkg.data_plugins()
+        for p in rules["plugins"]:
+            states.append(True if p.lower() in ALWAYS_LOADED or data is None or p.lower() in data else "missing")
     elif own:
         if pkg.plugins is None:
             states.append(None)
@@ -552,6 +590,26 @@ def plugin_state(rules, pkg):
     if any(s is False for s in states):
         return "inactive"
     return "missing"
+
+
+def not_loaded_reason(rules):
+    """0.4.1: why a mod is NOT LOADED, naming what was really checked: its own .esm plugins in plugins.txt,
+    its DLLs in the input's SFSE plugin DLL list (the collector's manifest listing, else the .dll files in the
+    input), or both. Official masters aren't named: in a file with other plugins or DLLs they don't count. A file
+    that names only official masters is NOT LOADED only when the input's Data plugin list lacks them."""
+    own = [p for p in rules["plugins"] if not is_official(p)]
+    parts = []
+    if rules["plugins"] and not own and not rules["dlls"]:
+        parts.append("its official master is not in the input's Data plugin list" if len(rules["plugins"]) == 1
+                     else "none of its official masters is in the input's Data plugin list")
+    if own:
+        parts.append("the plugin is not active in plugins.txt" if len(own) == 1
+                     else "none of its plugins is active in plugins.txt")
+    if rules["dlls"]:
+        parts.append("its DLL is not among the SFSE plugin DLLs in the input" if len(rules["dlls"]) == 1
+                     else "none of its DLLs is among the SFSE plugin DLLs in the input")
+    text = " and ".join(parts) or "none of its plugins is loaded"
+    return text[0].upper() + text[1:] + ", so its rules were not checked."
 
 
 class LogView:
@@ -594,6 +652,7 @@ def check_mod(rules, pkg, blocks, keep=50):
 
     if res["plugin_state"] in ("inactive", "missing"):
         res["status"] = NOT_LOADED
+        res["not_loaded_reason"] = not_loaded_reason(rules)
         return res
 
     # expect rules
@@ -695,7 +754,17 @@ def check_mod(rules, pkg, blocks, keep=50):
         res["status"] = NOT_SEEN
     else:
         res["status"] = PASS
+    # 0.4.1: the lines the explain rules found (the sum of their counts), so a NOT SEEN mod can say
+    # "NOT SEEN (N found)" on stdout and in the summary. A new key; the status stays as it was.
+    res["explain_found"] = sum(r["count"] for r in res["rules"] if r["kind"] == "explain")
     return res
+
+
+def shown_status(r):
+    """The status as stdout and the report summary show it: NOT SEEN gets "(N found)" when explain rules matched."""
+    if r["status"] == NOT_SEEN and r.get("explain_found"):
+        return f"{NOT_SEEN} ({r['explain_found']} found)"
+    return r["status"]
 
 
 def package_checks(pkg, blocks, our_blocks_ids):
@@ -771,7 +840,7 @@ def text_report(data, max_lines):
             counts[x["status"]] = counts.get(x["status"], 0) + 1
         c = ", ".join(f"{v} {k.lower()}" for k, v in counts.items()) or "-"
         note = "named in note" if r["named_in_note"] else "not in note"
-        out.append(f"  {r['status']:<10} {r['mod']} {r['version']}  ({note}; {c})")
+        out.append(f"  {shown_status(r):<10} {r['mod']} {r['version']}  ({note}; {c})")
     out.append("")
     for r in data["mods"]:
         out.append(f"== {r['mod']} {r['version']}: {r['status']}")
@@ -782,7 +851,7 @@ def text_report(data, max_lines):
         if r["logs"] != ["Papyrus logs"]:
             out.append(f"   Log checked: {', '.join(r['logs'])}" + (" (it is not in the input)" if r.get("logs_missing") else ""))
         if r["status"] == NOT_LOADED:
-            out.append("   The plugin is not active in plugins.txt, so its rules were not checked.")
+            out.append("   " + r.get("not_loaded_reason", "The plugin is not active in plugins.txt, so its rules were not checked."))
             out.append("")
             continue
         explain_only = bool(r["rules"]) and all(x["kind"] == "explain" for x in r["rules"])
@@ -835,6 +904,8 @@ def text_report(data, max_lines):
         out.append("so they were not checked.")
         for n in data["not_loaded"]:
             out.append(f"  NOT LOADED {n['mod']} {n['version']}  ({', '.join(n['plugins'])}: {n['plugin_state']}; rules {n['path']})")
+            if n.get("not_loaded_reason"):
+                out.append(f"    {n['not_loaded_reason']}")
         out.append("")
     for e in data.get("rule_errors", []):
         out.append(f"SKIPPED rule file {e['path']}: {e['error']}")
@@ -939,7 +1010,8 @@ def run(args):
                 kept.append((p, r))
             else:   # 0.4.0: listed as NOT LOADED (one line each), so a run that checks nothing says why
                 not_loaded.append({"mod": r["mod"], "version": r["version"], "path": r["_path"],
-                                   "plugins": r["plugins"] + r["dlls"], "plugin_state": state})
+                                   "plugins": r["plugins"] + r["dlls"], "plugin_state": state,
+                                   "not_loaded_reason": not_loaded_reason(r)})
         pairs = kept
         not_loaded.sort(key=lambda n: n["mod"].lower())
         Log.write(f"--root: {len(pairs)} of {before} rule file(s) are for loaded mods")
@@ -997,7 +1069,7 @@ def run(args):
 
     print(safe(pkg.name))
     for r in results:
-        print(safe(f"  {r['status']:<10} {r['mod']} {r['version']}"))
+        print(safe(f"  {shown_status(r):<10} {r['mod']} {r['version']}"))
     for n in not_loaded:
         print(safe(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
     for e in rule_errors:

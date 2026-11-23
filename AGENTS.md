@@ -64,6 +64,9 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 
   Each rule file found whose plugin isn't active (inactive or not in plugins.txt) is not checked and gets one
   `NOT LOADED <mod> <version>` line. A run where every line says NOT LOADED checked nothing, and exits with code 0.
+  A rule file whose only plugins are official masters (Starfield.esm, the DLC, SFBGS*.esm,
+  BlueprintShips-<official>.esm) counts as loaded without a plugins.txt line; only a collector manifest's
+  `listing.dataPlugins` that lacks the master makes it NOT LOADED (Starfield.esm always counts).
 
 - Recheck an older log as an older version of the mod:
 
@@ -81,6 +84,10 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
       python -I papyrus_log_check.py examples/Papyrus.0.log --rules MyMod.logrules.json
 
   The example log is from another mod, so a good copy shows `NOT SEEN` with exit code 0.
+  `examples/Papyrus.0.log --rules examples/example-quiet.logrules.json` shows the case where such a mod's explain
+  rules still matched: it prints `NOT SEEN (2 found) Example Quiet 0.2.0` and exits with code 0.
+  `min` and `always` belong to expect rules only: on a forbid rule either one is a bad field (exit 2), and on an
+  explain rule only `"min": 1` and `"always": false` are accepted (they change nothing).
 
 - Troubleshoot a run: add `--verbose` (log on stderr) or `--log papyrus-log-check.log.txt` (log to a file).
 
@@ -91,7 +98,12 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 - **Output:** two files in `--out` (default `out\` next to the script): `logcheck-<input stamp>-run<run stamp>.txt`
   and `.json`. They are never overwritten. stdout gets one line per mod (`PASS`, `FAIL`, `FOUND`, `NOT SEEN`,
   `NOT LOADED`), any `SKIPPED` rule files and `FLAG` lines, then the two report paths. stderr gets the byline.
-  The JSON lists checked mods in `mods` and, with `--root`, the unchecked ones in `not_loaded`.
+  A mod that never logged but whose explain rules matched shows `NOT SEEN (N found)` there and in the report's
+  summary (N = the lines its explain rules found); its JSON `status` stays `NOT SEEN`, and every checked mod has
+  the number in `explain_found`.
+  The JSON lists checked mods in `mods` and, with `--root`, the unchecked ones in `not_loaded`. Each NOT LOADED
+  entry (in either list) has `not_loaded_reason`, a sentence that names what was checked (plugins.txt, the SFSE
+  plugin DLL list, or both).
 - **Exit codes:** 0 = no rule failed (FOUND counts as no failure); 1 = at least one FAIL; 2 = bad arguments, a bad
   rule file (the message names the file and the field) or an input that couldn't be read.
 - **Log:** only when asked: `--verbose` to stderr, `--log FILE` to that file (overwritten each run; a name that

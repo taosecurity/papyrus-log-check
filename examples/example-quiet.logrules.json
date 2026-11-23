@@ -1,0 +1,17 @@
+{
+  "mod": "Example Quiet",
+  "version": "0.2.0",
+  "plugins": ["ExampleQuiet.esm"],
+  "names": ["ExampleQuiet"],
+  "prefix": "\\[EXQ\\]",
+  "scripts": "^EXQ_|\\bEXQ_",
+  "expect": [
+    {"id": "started", "re": "\\[EXQ\\] quest started, version {version}", "always": true,
+     "show": "[EXQ] quest started, version …",
+     "means": "The mod writes this line at every new game and every load. If it is missing, the mod's quest never ran."}
+  ],
+  "explain": [
+    {"id": "vm-frozen", "re": "VM is freezing|VM is frozen",
+     "means": "The game paused the script engine, for example during a save or a load. If the mod's quest starts at load, it may have been waiting here."}
+  ]
+}

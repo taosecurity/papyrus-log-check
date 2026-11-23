@@ -192,7 +192,7 @@ You can give it any of these three kinds of input:
 
 A folder or zip may also hold these files:
 
-- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. A rule file whose only plugin is `Starfield.esm` always counts as active, because the game always loads it and never lists it there; in a file that also names other plugins, only those are looked up.
+- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. A rule file whose only plugins are official masters always counts as active, because the game loads them without listing them there: `Starfield.esm`, the DLC masters (`Constellation.esm`, `OldMars.esm`, `ShatteredSpace.esm`), the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. When the input is a collector package whose manifest lists the Data folder's plugins (`listing.dataPlugins`), an official master that isn't in that list doesn't count (`Starfield.esm` always does). In a file that also names other plugins, only those are looked up.
 - **Crash logs** (`Crashlog*.txt`, `crash-*.log`, or files in a `crashlogs` folder) are listed as FLAG lines.
 - **An SFSE plugin's own log** is checked when a rule file names it in `logs`.
 
@@ -265,7 +265,7 @@ Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examp
 | Field | What it means |
 |---|---|
 | `mod`, `version` | The report shows them. `{version}` in any regex is replaced by the version, so a wrong build shows up as a FAIL. |
-| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. `Starfield.esm` always counts as active, so a rule file about the game's own messages names it as its only plugin. In a rule file that also names other plugins or DLLs, `Starfield.esm` doesn't count: one of the others must be loaded. |
+| `plugins` | These are the mod's plugin files. If none of them is active in plugins.txt, the mod is NOT LOADED. `Starfield.esm` always counts as active, so a rule file about the game's own messages names it as its only plugin. The other official masters (the DLC, `SFBGS*.esm` and `BlueprintShips-<official>.esm`) count the same way when their file is in Data, so a rule file about a DLC's own messages names that DLC's master. In a rule file that also names other plugins or DLLs, official masters don't count: one of the others must be loaded. |
 | `dlls` | These are the DLL names of an SFSE plugin. Without a DLL listing, `.dll` files in the input count as installed. Give `plugins`, `dlls` or both. |
 | `logs` | These are log file names to check instead of the Papyrus logs, for example `["my_sfse_plugin.log"]`. |
 | `names` | These are words to look for in the input's name. A match shows as "named in note" in the summary. |
@@ -273,8 +273,8 @@ Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examp
 | `scripts` | This regex matches the mod's script names. Papyrus errors whose message or stack matches it count as the mod's errors. |
 | `expect` | These are lines that should appear. Each has an `id`, a regex `re`, an optional `min` (default 1) and an optional `always` (the line must appear whenever the mod logged at all). |
 | `order` | Each entry lists `expect` ids whose first lines must appear in that order. |
-| `forbid` | These are lines that must not appear. Each has an `id` and a regex `re`. |
-| `explain` | These are lines worth knowing about, which don't fail the mod. Each has an `id`, a regex `re` and a `means` that says what the line means. The starter rule pack is made of them. |
+| `forbid` | These are lines that must not appear. Each has an `id` and a regex `re`. A forbid rule fails on any matching line, so it can't have `min` or `always`: the rule file is refused with a message that names the rule. |
+| `explain` | These are lines worth knowing about, which don't fail the mod. Each has an `id`, a regex `re` and a `means` that says what the line means. The starter rule pack is made of them. An explain rule can't have `min` or `always`, except `"min": 1` and `"always": false`, which say what it does anyway and change nothing. |
 | `ignore` | These regexes (or `{"re", "why"}` pairs) match errors of the mod's scripts that are known and harmless. |
 | `show`, `means` | These hold free text for people. The report prints `means` when a rule isn't PASS. Other fields, such as the pack's `about` and `source`, are notes for people and are not read. |
 
@@ -292,11 +292,22 @@ Package checks
 
 Each mod gets one of five results:
 
-- **NOT LOADED** means none of its plugins is active in plugins.txt and none of its DLLs is installed. Nothing else is checked.
+- **NOT LOADED** means none of its plugins is active in plugins.txt and none of its DLLs is installed. Nothing else is checked. The report says which check it was: plugins.txt for a rule file that names only plugins, the input's list of SFSE plugin DLLs for one that names only DLLs, or both, and the Data plugin list for one that names only official masters. The JSON gives the same sentence in `not_loaded_reason`.
 - **NOT SEEN** means no line matches `prefix` and no rule passed. Usually the mod's features weren't tested, or the debug lines don't reach the log.
 - **FAIL** means at least one rule failed.
-- **FOUND** means no rule failed, but at least one `explain` rule matched. Read its lines in the report. It doesn't change the exit code. A mod that never logged stays NOT SEEN even when an explain rule matched (its FOUND lines are still in the report), unless its rule file has only explain rules, as the starter pack's files do.
+- **FOUND** means no rule failed, but at least one `explain` rule matched. Read its lines in the report. It doesn't change the exit code. A mod that never logged stays NOT SEEN even when an explain rule matched (its FOUND lines are still in the report), unless its rule file has only explain rules, as the starter pack's files do. For a mod that stays NOT SEEN this way, the screen and the report's summary show `NOT SEEN (N found)`, where N is the number of lines its explain rules found (a line two rules match counts twice). The JSON status stays `NOT SEEN`, and each checked mod has the number in `explain_found`.
 - **PASS** means the mod logged and no rule failed. Some rules may still be NOT SEEN.
+
+For example, [`examples/example-quiet.logrules.json`](examples/example-quiet.logrules.json) is for a made-up mod that never logged in the example log, but its explain rule matches two of the log's lines:
+
+```
+> python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-quiet.logrules.json
+papyrus-log-check 0.4.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+Papyrus.0.log
+  NOT SEEN (2 found) Example Quiet 0.2.0
+Report: ...\out\logcheck-20261109-095824-run20261122-191459.txt
+JSON:   ...\out\logcheck-20261109-095824-run20261122-191459.json
+```
 
 Each rule gets its own result:
 

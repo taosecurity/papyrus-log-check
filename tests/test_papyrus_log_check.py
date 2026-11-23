@@ -391,6 +391,25 @@ class TestExample(unittest.TestCase):
         self.assertEqual(statuses["no-double-start"], plc.PASS)
         self.assertEqual(statuses["script errors"], plc.PASS)  # its one error is on the ignore list
 
+    def test_quiet_example(self):
+        """0.4.1: examples\\example-quiet.logrules.json (README "Results", CHANGELOG 0.4.1 Example) shows
+        NOT SEEN (2 found) on the example log, exit 0, JSON status NOT SEEN."""
+        import contextlib
+        import io
+        ex = os.path.join(os.path.dirname(HERE), "examples")
+        with tempfile.TemporaryDirectory() as out:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = plc.main([os.path.join(ex, "Papyrus.0.log"), "--rules",
+                                 os.path.join(ex, "example-quiet.logrules.json"), "--out", out])
+            js = [f for f in os.listdir(out) if f.endswith(".json")][0]
+            data = json.loads(read(os.path.join(out, js)))
+        self.assertEqual(code, 0)
+        self.assertIn("  NOT SEEN (2 found) Example Quiet 0.2.0\n", buf.getvalue())
+        m = data["mods"][0]
+        self.assertEqual(m["status"], plc.NOT_SEEN)
+        self.assertEqual(m["explain_found"], 2)
+
 
 class TestStarterExample(unittest.TestCase):
     """The starter rule file in examples\\ (README "Add logging to a Creation Kit mod") loads and fits the
@@ -776,6 +795,106 @@ class TestRootNotLoaded(Base):
         self.assertNotIn("NOT LOADED", stdout)
 
 
+class TestNotLoadedWording041(Base):
+    """0.4.1: the NOT LOADED sentence names what was really checked (plugins.txt, the SFSE DLL list, or both)."""
+
+    PLUGIN = "The plugin is not active in plugins.txt, so its rules were not checked."
+    DLL = "Its DLL is not among the SFSE plugin DLLs in the input, so its rules were not checked."
+    BOTH = ("The plugin is not active in plugins.txt and its DLL is not among the SFSE plugin DLLs in the input, "
+            "so its rules were not checked.")
+
+    def test_reason_for_plugin_only_dll_only_and_mixed_rule_files(self):
+        cases = [(["OffMod.esm"], [], self.PLUGIN),
+                 (["OffMod.esm", "Absent.esm"], [],
+                  "None of its plugins is active in plugins.txt, so its rules were not checked."),
+                 ([], ["Nope.dll"], self.DLL),
+                 (["Starfield.esm"], ["Nope.dll"], self.DLL),
+                 ([], ["Nope.dll", "Gone.dll"],
+                  "None of its DLLs is among the SFSE plugin DLLs in the input, so its rules were not checked."),
+                 (["OffMod.esm"], ["Nope.dll"], self.BOTH)]
+        for plugins, dlls, want in cases:
+            with self.subTest(plugins=plugins, dlls=dlls):
+                _, res = self.check(dict(RULES, plugins=plugins, dlls=dlls))
+                self.assertEqual(res["status"], plc.NOT_LOADED)
+                self.assertEqual(res["not_loaded_reason"], want)
+
+    def test_report_says_the_reason_for_each_explicit_rule_file(self):
+        for plugins, dlls, want in ((["OffMod.esm"], [], self.PLUGIN), ([], ["Nope.dll"], self.DLL),
+                                    (["OffMod.esm"], ["Nope.dll"], self.BOTH)):
+            with self.subTest(plugins=plugins, dlls=dlls):
+                path = os.path.join(self.dir, "one.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(dict(RULES, plugins=plugins, dlls=dlls), f)
+                out = os.path.join(self.dir, "out-%d%d" % (len(plugins), len(dlls)))
+                _, stdout, data, txt = run_quiet([make_zip(self.dir), "--rules", path, "--out", out])
+                self.assertEqual(data["mods"][0]["status"], plc.NOT_LOADED)
+                self.assertEqual(data["mods"][0]["not_loaded_reason"], want)
+                self.assertIn("   " + want + "\n", txt)
+                if dlls and not plugins:
+                    self.assertNotIn("plugins.txt, so its rules", txt)
+                self.assertIn("NOT LOADED", stdout)
+
+    def test_root_not_loaded_list_gives_the_reason(self):
+        write_rules(self.root, "DllMod", dict(RULES, mod="Dll Mod", plugins=[], dlls=["Nope.dll"]))
+        write_rules(self.root, "OffMod", dict(RULES, mod="Off Mod", plugins=["OffMod.esm"]))
+        _, _, data, txt = run_quiet([make_zip(self.dir), "--root", self.root, "--out", self.out])
+        self.assertEqual([(n["mod"], n["not_loaded_reason"]) for n in data["not_loaded"]],
+                         [("Dll Mod", self.DLL), ("Off Mod", self.PLUGIN)])
+        self.assertIn("\n    " + self.DLL + "\n", txt)
+        self.assertIn("\n    " + self.PLUGIN + "\n", txt)
+        # the 0.4.0 keys are all still there; only the new key is added
+        self.assertEqual(set(data["not_loaded"][0]) - {"not_loaded_reason"},
+                         {"mod", "version", "path", "plugins", "plugin_state"})
+
+
+class TestNotSeenFound041(Base):
+    """0.4.1: a mod that never logged but whose explain rules matched shows "NOT SEEN (N found)"."""
+
+    EXPLAIN = [{"id": "none", "re": "on a None object", "means": "Something was empty."},
+               {"id": "foo", "re": "Cannot call Foo\\(\\)", "means": "Foo was empty."}]
+    QUIET = dict(RULES, prefix="NEVERLOGGED:", expect=[{"id": "three", "re": "TEST: step three"}],
+                 order=[], forbid=[], scripts="", explain=EXPLAIN)
+
+    def run_rules(self, rules, name="quiet.json"):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rules, f)
+        return run_quiet([make_zip(self.dir), "--rules", path, "--out", self.out])
+
+    def test_explain_found_counts_the_lines_of_all_explain_rules(self):
+        _, res = self.check(self.QUIET)
+        self.assertEqual(res["status"], plc.NOT_SEEN)
+        self.assertEqual(res["explain_found"], 3)   # 2 "None object" lines + 1 "Foo()" line (one line counted twice)
+        self.assertEqual(plc.shown_status(res), "NOT SEEN (3 found)")
+        _, res = self.check(dict(self.QUIET, explain=[]))
+        self.assertEqual(res["explain_found"], 0)
+        self.assertEqual(plc.shown_status(res), "NOT SEEN")
+        _, res = self.check(dict(self.QUIET, prefix="TEST:"))   # the mod ran: FOUND, no "(N found)"
+        self.assertEqual(plc.shown_status(res), plc.FOUND)
+
+    def test_stdout_and_summary_say_not_seen_n_found(self):
+        code, stdout, data, txt = self.run_rules(self.QUIET)
+        self.assertEqual(code, 0)   # explain is never a FAIL
+        mod = data["mods"][0]
+        self.assertEqual(mod["status"], plc.NOT_SEEN)   # the JSON status is unchanged
+        self.assertEqual(mod["explain_found"], 3)
+        self.assertIn("  NOT SEEN (3 found) Test Mod 1.2.0\n", stdout)
+        self.assertIn("  NOT SEEN (3 found) Test Mod 1.2.0  (", txt)
+        self.assertIn("== Test Mod 1.2.0: NOT SEEN\n", txt)
+
+    def test_plain_not_seen_is_unchanged(self):
+        _, stdout, data, txt = self.run_rules(dict(self.QUIET, explain=[{"id": "x", "re": "no such line"}]))
+        self.assertEqual(data["mods"][0]["explain_found"], 0)
+        self.assertIn("  NOT SEEN   Test Mod 1.2.0\n", stdout)
+        self.assertNotIn("found)", stdout)
+
+    def test_mods_keys_only_gain_explain_found(self):
+        _, _, data, _ = self.run_rules(self.QUIET)
+        self.assertEqual(set(data["mods"][0]) - {"explain_found"},
+                         {"mod", "version", "rules_file", "rule_file_version", "plugins", "plugin_state",
+                          "named_in_note", "rules", "prefix_lines", "first_prefix", "last_prefix", "logs", "status"})
+
+
 class TestReviewFixes040(Base):
     """0.4.0 code-review fixes."""
 
@@ -855,6 +974,132 @@ class TestReviewFixes040(Base):
         finally:
             plc.script_frame = real
         self.assertEqual(res["status"], plc.FAIL)
+
+
+class TestRuleChecks041(Base):
+    """0.4.1: 'min' and 'always' checks on explain and forbid rules."""
+
+    def load(self, **kinds):
+        path = os.path.join(self.dir, "rc.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(RULES, **kinds), f)
+        return plc.load_rules(path)
+
+    def errors(self, **kinds):
+        try:
+            self.load(**kinds)
+        except ValueError as e:
+            return str(e)
+        return None
+
+    def test_bad_min_on_an_explain_rule_gives_the_explain_error(self):
+        for value in (0, "two", 2.5, -1):
+            with self.subTest(value=value):
+                msg = self.errors(explain=[{"id": "x", "re": "y", "min": value}])
+                self.assertIsNotNone(msg)
+                self.assertIn("rc.json: explain rule 'x' has 'min'", msg)
+                self.assertIn("which only expect rules use", msg)
+                self.assertNotIn("whole number", msg)
+
+    def test_no_op_min_and_always_are_accepted_on_explain_rules(self):
+        for extra in ({"min": 1}, {"always": False}, {"min": 1, "always": False}):
+            with self.subTest(extra=extra):
+                r = self.load(explain=[dict({"id": "x", "re": "y"}, **extra)])
+                self.assertEqual(len(r["explain"]), 1)
+        for extra in ({"min": True}, {"always": 0}, {"always": None}):   # look alike, but not the no-op values
+            with self.subTest(extra=extra):
+                self.assertIsNotNone(self.errors(explain=[dict({"id": "x", "re": "y"}, **extra)]))
+
+    def test_no_op_explain_values_change_nothing_in_a_run(self):
+        explain = [{"id": "none", "re": "on a None object", "means": "Something was empty."}]
+        _, plain = self.check(dict(RULES, explain=explain))
+        _, noop = self.check(dict(RULES, explain=[dict(explain[0], min=1, always=False)]))
+        self.assertEqual(plain["status"], noop["status"])
+        self.assertEqual([r for r in plain["rules"] if r["kind"] == "explain"],
+                         [r for r in noop["rules"] if r["kind"] == "explain"])
+
+    def test_min_and_always_are_refused_on_forbid_rules(self):
+        for key, value in (("min", 2), ("min", 1), ("min", "x"), ("always", True), ("always", False)):
+            with self.subTest(key=key, value=value):
+                msg = self.errors(forbid=[{"id": "bad", "re": "y", key: value}])
+                self.assertIsNotNone(msg)
+                self.assertIn(f"rc.json: forbid rule 'bad' has '{key}', which only expect rules use", msg)
+                self.assertIn(f"Remove '{key}' from it", msg)
+
+    def test_min_and_always_still_work_on_expect_rules(self):
+        r = self.load(expect=[{"id": "a", "re": "TEST: step one", "min": 2, "always": True}])
+        self.assertEqual(r["expect"][0]["min"], 2)
+        msg = self.errors(expect=[{"id": "a", "re": "y", "min": 0}])
+        self.assertIn("expect rule 'a' has 'min' 0; it should be a whole number", msg)
+
+
+class TestOfficialMasters041(Base):
+    """0.4.1: every official master is loaded without a plugins.txt line when its file is in Data."""
+
+    DATA = [{"name": n} for n in ("Starfield.esm", "ShatteredSpace.esm", "SFBGS003.esm",
+                                  "BlueprintShips-Starfield.esm", "TestMod.esm")]
+
+    def check_with(self, rules, data):
+        """check() with a manifest that has (data is a list) or lacks (None) listing.dataPlugins."""
+        global MANIFEST
+        saved = MANIFEST
+        try:
+            listing = dict(saved["listing"])
+            if data is not None:
+                listing["dataPlugins"] = data
+            MANIFEST = dict(saved, listing=listing)
+            return self.check(rules)
+        finally:
+            MANIFEST = saved
+
+    def test_is_official(self):
+        for name in ("Starfield.esm", "constellation.esm", "OldMars.esm", "ShatteredSpace.esm", "SFBGS003.esm",
+                     "sfbgs00d.esm", "BlueprintShips-Starfield.esm", "BlueprintShips-SFBGS050.esm"):
+            self.assertTrue(plc.is_official(name), name)
+        for name in ("TestMod.esm", "MyMod-ShatteredSpaceAddon.esm", "BlueprintShips-TestMod.esm", "sfta01.esm",
+                     "SFBGS0031.esm", "ShatteredSpace.esp", "Starfield.esm.bak"):
+            self.assertFalse(plc.is_official(name), name)
+
+    def test_official_master_only_files_count_as_loaded(self):
+        for plugins in (["ShatteredSpace.esm"], ["SFBGS003.esm"], ["BlueprintShips-Starfield.esm"],
+                        ["Starfield.esm", "ShatteredSpace.esm"]):
+            for data in (self.DATA, None):
+                with self.subTest(plugins=plugins, data=data is not None):
+                    _, res = self.check_with(dict(RULES, plugins=plugins), data)
+                    self.assertEqual(res["plugin_state"], "active")
+                    self.assertNotEqual(res["status"], plc.NOT_LOADED)
+
+    def test_official_master_missing_from_data_is_not_loaded(self):
+        _, res = self.check_with(dict(RULES, plugins=["Constellation.esm"]), self.DATA)
+        self.assertEqual(res["plugin_state"], "missing")
+        self.assertEqual(res["status"], plc.NOT_LOADED)
+        self.assertEqual(res["not_loaded_reason"], "Its official master is not in the input's Data plugin list, "
+                                                   "so its rules were not checked.")
+        _, res = self.check_with(dict(RULES, plugins=["Constellation.esm", "OldMars.esm"]), self.DATA)
+        self.assertEqual(res["not_loaded_reason"], "None of its official masters is in the input's Data plugin "
+                                                   "list, so its rules were not checked.")
+        # Starfield.esm stays always loaded, even when a listing lacks it (0.4.0)
+        _, res = self.check_with(dict(RULES, plugins=["Starfield.esm"]), [{"name": "TestMod.esm"}])
+        self.assertEqual(res["plugin_state"], "active")
+
+    def test_official_masters_do_not_make_other_plugins_active(self):
+        cases = [(["ShatteredSpace.esm", "OffMod.esm"], [], "inactive",
+                  "The plugin is not active in plugins.txt, so its rules were not checked."),
+                 (["SFBGS003.esm", "Absent.esm"], [], "missing", None),
+                 (["ShatteredSpace.esm", "TestMod.esm"], [], "active", None),
+                 (["ShatteredSpace.esm"], ["Nope.dll"], "missing",
+                  "Its DLL is not among the SFSE plugin DLLs in the input, so its rules were not checked."),
+                 (["ShatteredSpace.esm"], ["MyDll.dll"], "active", None)]
+        for plugins, dlls, want, reason in cases:
+            with self.subTest(plugins=plugins, dlls=dlls):
+                _, res = self.check_with(dict(RULES, plugins=plugins, dlls=dlls), self.DATA)
+                self.assertEqual(res["plugin_state"], want)
+                if reason:
+                    self.assertEqual(res["not_loaded_reason"], reason)
+
+    def test_a_bad_data_listing_is_ignored(self):
+        _, res = self.check_with(dict(RULES, plugins=["Constellation.esm"]), "oops")
+        self.assertEqual(res["plugin_state"], "active")   # no usable listing: counts as loaded
 
 
 if __name__ == "__main__":

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.1 (unreleased)
+
+### What's new
+
+This is a fix release for the four things left over from the 0.4.0 review. A NOT LOADED mod now says what was checked, a quiet mod whose explain rules matched says how many lines they found, rule-file mistakes with `min` and `always` get one clear error, and the game's official masters count as loaded without a plugins.txt line. The JSON only gains two keys, `not_loaded_reason` and `explain_found`.
+
+### Example
+
+The new `examples/example-quiet.logrules.json` is for a made-up mod that never logged in the example log, while its explain rule matched two lines:
+
+    > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-quiet.logrules.json
+    papyrus-log-check 0.4.1 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    Papyrus.0.log
+      NOT SEEN (2 found) Example Quiet 0.2.0
+    Report: ...\out\logcheck-20261109-095824-run20261122-191459.txt
+    JSON:   ...\out\logcheck-20261109-095824-run20261122-191459.json
+
+Before 0.4.1 the line said only `NOT SEEN`, so the two found lines were easy to miss.
+
+### Fixes
+
+- A NOT LOADED mod's report now says what was checked. Before, it always said the plugin wasn't active in plugins.txt, even for a rule file that names only an SFSE plugin DLL. Now it names plugins.txt, the input's list of SFSE plugin DLLs, or both.
+- The list of rule files that weren't checked (with `--root`) gives the same sentence under each one.
+- The JSON has the sentence in a new `not_loaded_reason` key, in `mods` and in `not_loaded`. No other key changed.
+- A mod that never logged but whose explain rules matched now shows `NOT SEEN (N found)` on the screen and in the report's summary, so the found lines aren't missed. N is the number of lines the explain rules found.
+- The JSON status stays `NOT SEEN`. Each checked mod gets a new `explain_found` key with the number. The exit code doesn't change.
+- A bad `min` on an explain rule now gives one clear error ("only expect rules use it") instead of a type error first and that error after the fix.
+- An explain rule may now have `"min": 1` or `"always": false`. They say what an explain rule does anyway, so they change nothing.
+- A forbid rule with `min` or `always` is now refused with an error that names the file, the rule and the fix. Before, both were accepted and ignored.
+- A rule file whose only plugins are official masters now counts as loaded, like `Starfield.esm` before. This covers the DLC masters, the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. The game loads them without a plugins.txt line, so before, such a file was always NOT LOADED.
+- When a collector manifest lists the Data folder's plugins, an official master missing from that list makes the file NOT LOADED, and the report says so.
+
+### Changes
+
+- `examples/example-quiet.logrules.json` is a new made-up rule file that shows the `NOT SEEN (N found)` line. The README's Results section and AGENTS.md use it, and a test checks its output.
+
+### Download
+
+Download `papyrus-log-check-0.4.1.zip` below, unpack it and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
+
 ## 0.4.0 (2026-11-20)
 
 ### What's new
@@ -95,11 +135,11 @@ Download `papyrus-log-check-0.3.1.zip` below, unpack it and follow the Install s
 
 ## 0.3.0 (2026-11-16)
 
-From a code review and a security review.
+These changes came from a code review and a security review.
 
-- New `--verbose` and `--log FILE`: a troubleshooting log of what was read, what was decided and why a run
+- New `--verbose` and `--log FILE` options write a troubleshooting log of what was read, what was decided and why a run
   stopped. `--log` refuses a name that would overwrite an input.
-- AGENTS.md: step-by-step instructions for AI assistants, also in the release zip.
+- AGENTS.md gives step-by-step instructions for AI assistants, and it is also in the release zip.
 - Text from logs, rule files and the manifest is shown with control characters as `\xNN`, so escape codes hidden
   in a shared log can't change the terminal.
 - Rule files are checked field by field, and every pattern (`scripts` and `ignore` too) is checked up front: a
