@@ -1228,5 +1228,35 @@ class TestListings041Review(Base):
         self.assertEqual(pkg.sfse_dlls(), {"one.dll"})
 
 
+class TestDocsVersion(unittest.TestCase):
+    """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
+
+    PATTERNS = (
+        r"papyrus-log-check-(\d+\.\d+\.\d+)\.zip",                 # the install steps
+        r"papyrus-log-check (\d+\.\d+\.\d+) by ",                   # the banner in the sample outputs
+        r"run once on\s+papyrus-log-check (\d+\.\d+\.\d+)",         # AGENTS.md line 4 (may wrap)
+    )
+
+    def versions(self, name):
+        import re
+        with open(os.path.join(TOOL_DIR, name), encoding="utf-8") as f:
+            text = f.read()
+        return [(p, v) for p in self.PATTERNS for v in re.findall(p, text)]
+
+    def test_docs_name_the_current_version(self):
+        for name in ("README.md", "AGENTS.md"):
+            found = self.versions(name)
+            self.assertTrue(found, name + " names no version at all: the patterns no longer match")
+            for pattern, v in found:
+                self.assertEqual(v, plc.VERSION, "%s names %s (pattern %s), but VERSION is %s: rerun the "
+                                 "sample and update the text" % (name, v, pattern, plc.VERSION))
+
+    def test_each_pattern_matches_somewhere(self):
+        """A pattern that matches nothing guards nothing."""
+        for p in self.PATTERNS:
+            hits = [v for n in ("README.md", "AGENTS.md") for q, v in self.versions(n) if q == p]
+            self.assertTrue(hits, "pattern matches neither README.md nor AGENTS.md: " + p)
+
+
 if __name__ == "__main__":
     unittest.main()
