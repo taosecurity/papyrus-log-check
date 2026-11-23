@@ -1024,8 +1024,9 @@ _NAME_TRIES = 100  # report names tried per run (-2 ... -100) before giving up
 _REFUSED_TRIES = 3  # PermissionError on this many names means the folder itself refuses
 
 
-class _NamesTaken(ValueError):
-    """Every report name this run tried was taken; the message names the folder and the fix."""
+class _WriteStopped(ValueError):
+    """The report write stopped for a reason its message already explains in full (every name taken, or an unpaired
+    .txt that couldn't be removed); the write's error handler passes it on unchanged."""
 
 
 def run(args):
@@ -1159,7 +1160,9 @@ def _run(args, opened):
     report = text_report(data, args.max_lines)
     # 0.4.2: each file is created exclusively ("x"), so a run never truncates another run's report, and `f` holds
     # only a file this run created. A failed write (any error, Ctrl+C too) closes and removes the file it was
-    # writing; a report that was written completely is in `kept`, stays, and the error names it.
+    # writing once open() has returned it (a Ctrl+C inside open() itself can leave an empty file, which is why the
+    # docs trust a pair only after exit 0 or 1); a report that was written completely is in `kept`, stays, and the
+    # error names it.
     stem = base
     kept = []
     f = None
@@ -1185,9 +1188,22 @@ def _run(args, opened):
             kept.append(f.name)
             try:
                 f = open(base + ".json", "x", encoding="utf-8")
-            except FileExistsError:  # another run took the .json name: drop our .txt and take the next free pair
+            except (FileExistsError, PermissionError) as e:
+                # Another run took the .json name (or, on Windows, is deleting a file of that name): drop our .txt
+                # and take the next free pair. A refused name counts toward the same limit as for the .txt.
                 f = None
-                os.remove(kept.pop())
+                try:
+                    os.remove(kept[-1])
+                except OSError as rm:
+                    raise _WriteStopped(
+                        f"Can't write the report in {out_dir}: the name {os.path.basename(base)}.json was taken while "
+                        f"this run wrote its text report, and that unpaired text report couldn't be removed "
+                        f"({rm.strerror or rm}): {kept[-1]}. Delete that file, then run again.") from e
+                kept.pop()
+                if isinstance(e, PermissionError):
+                    refused += 1
+                    if refused >= _REFUSED_TRIES:
+                        raise
                 continue
             with f:
                 json.dump(data, f, indent=1, ensure_ascii=False)
@@ -1195,7 +1211,7 @@ def _run(args, opened):
             f = None
             break
         else:
-            raise _NamesTaken(f"Can't write the report in {out_dir}: the first {_NAME_TRIES} report names for this "
+            raise _WriteStopped(f"Can't write the report in {out_dir}: the first {_NAME_TRIES} report names for this "
                               f"run ({os.path.basename(stem)}...) are all taken. Move old reports out of the folder, "
                               f"or give --out another folder.")
     except BaseException as e:  # also a non-OSError (unserializable data, Ctrl+C) removes its half-written file
@@ -1209,11 +1225,12 @@ def _run(args, opened):
             except OSError:
                 pass
         saved = f" The text report was written in full and is kept: {kept[0]}." if kept else ""
-        if isinstance(e, _NamesTaken) or not isinstance(e, Exception):  # Ctrl+C and exit go on as they are
+        if isinstance(e, _WriteStopped) or not isinstance(e, Exception):  # Ctrl+C and exit go on as they are
             raise
         if not isinstance(e, OSError):
             raise ValueError(f"Can't write the report in {out_dir} ({type(e).__name__}: {e}). This is a bug in "
-                             f"{TOOL}: please report it at {URL}/issues with the --log file.{saved}") from e
+                             f"{TOOL}: please run it again with --log papyrus-log-check.log.txt and report it at "
+                             f"{URL}/issues with that log file attached.{saved}") from e
         why = e.strerror or e
         if e.errno in _DISK_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "

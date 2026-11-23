@@ -1745,6 +1745,92 @@ class TestReviewRound7042(Base):
         self.assertTrue(os.path.isfile(link[:-len(".txt")] + "-2.json"))
 
 
+class TestReviewRound8042(Base):
+    """0.4.2 /code-review round 8: a refused .json name is retried like a refused .txt name, an unpaired .txt that
+    can't be removed is named in the error, and the bug-report text says how to make the log to attach."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def refusing_json_open(self, times):
+        """An open() whose first `times` exclusive .json report opens raise PermissionError (a delete-pending name)."""
+        import builtins
+        import errno
+        real_open = builtins.open
+        refused = []
+
+        def fake(path, *a, **k):
+            mode = k.get("mode", a[0] if a else "r")
+            if str(path).endswith(".json") and "logcheck-" in str(path) and mode == "x" and len(refused) < times:
+                refused.append(path)
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(path, *a, **k)
+        return fake, refused
+
+    def test_a_json_name_refused_once_moves_the_pair_to_the_next_name(self):
+        # Round 7 code caught only FileExistsError here: it stopped with exit 2 and kept an unpaired .txt.
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        fake, refused = self.refusing_json_open(1)
+        with mock.patch("builtins.open", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1), err)
+        self.assertEqual(len(refused), 1)
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 2, names)
+        self.assertTrue(names[0].endswith("-2.json") and names[1].endswith("-2.txt"), names)
+
+    def test_json_names_refused_every_time_stop_at_the_limit_and_leave_nothing(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        fake, refused = self.refusing_json_open(1000)
+        with mock.patch("builtins.open", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertEqual(len(refused), plc._REFUSED_TRIES)
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("is kept", err)
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_an_unpaired_txt_that_cant_be_removed_is_named(self):
+        # Round 7 code dropped the .txt from its list before the remove, so a failed remove left it unnamed and the
+        # error blamed the folder.
+        import builtins
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real_open = builtins.open
+        real_remove = os.remove
+
+        def fake_open(path, *a, **k):
+            if str(path).endswith(".json") and "logcheck-" in str(path):
+                raise FileExistsError(errno.EEXIST, "exists")
+            return real_open(path, *a, **k)
+
+        def fake_remove(path):
+            if str(path).endswith(".txt") and "logcheck-" in str(path):
+                raise PermissionError(errno.EACCES, "Access is denied")
+            return real_remove(path)
+        with mock.patch("builtins.open", fake_open), mock.patch.object(plc.os, "remove", fake_remove):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        txt = [n for n in os.listdir(self.out) if n.endswith(".txt")]
+        self.assertEqual(len(txt), 1)
+        self.assertIn("couldn't be removed (Access is denied): " + os.path.join(self.out, txt[0]), err)
+        self.assertIn("Delete that file, then run again.", err)
+        self.assertNotIn("Give --out a folder you can write to", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_the_bug_text_says_how_to_make_the_log_to_attach(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=TypeError("not serializable")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("please run it again with --log papyrus-log-check.log.txt and report it at", err)
+        self.assertIn("with that log file attached.", err)
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 
