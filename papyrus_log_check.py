@@ -178,6 +178,13 @@ class Package:
         self.zf = None
         self._logged = set()  # keys of the notes _log_once has written
         self.entries = {}  # lower-case path with / -> (key for _raw, path with /)
+        try:
+            self._load(path)
+        except BaseException:
+            self.close()  # 0.4.2: a constructor that fails part-way must not leave the zip open (locked on Windows)
+            raise
+
+    def _load(self, path):
         if os.path.isdir(path):
             self.kind = FOLDER
             for dirpath, dirnames, filenames in os.walk(path):
@@ -994,8 +1001,11 @@ def newest_zip(folder, source="--logs-dir"):
     """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time.
     `source` names where the folder came from (the option or the environment variable) for the error text."""
     if not os.path.isdir(folder):
-        raise FileNotFoundError(f"{source} {folder} is not a folder. Give an existing folder that holds log zips "
-                                f"(with --logs-dir, or in PAPYRUS_LOG_CHECK_LOGS).")
+        if source == "env":
+            raise FileNotFoundError(f"PAPYRUS_LOG_CHECK_LOGS is set to '{folder}', which is not a folder. "
+                                    f"Set it to an existing folder that holds log zips, or give --logs-dir.")
+        raise FileNotFoundError(f"--logs-dir '{folder}' is not a folder. Give an existing folder that holds log zips "
+                                f"(or set PAPYRUS_LOG_CHECK_LOGS).")
     zips = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".zip")]
     if not zips:
         raise FileNotFoundError(f"There is no .zip in {folder}.")
@@ -1023,7 +1033,7 @@ def _run(args, opened):
         source = "--logs-dir"
         if not logs_dir:
             logs_dir = os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
-            source = "The environment variable PAPYRUS_LOG_CHECK_LOGS, set to"
+            source = "env"
         if not logs_dir:
             raise ValueError("Give a log file, a folder or a zip, or use --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS.")
         zpath = newest_zip(logs_dir, source)
@@ -1146,11 +1156,11 @@ def _run(args, opened):
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, ensure_ascii=False)
     except OSError as e:
-        if isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError)) or e.errno in (errno.EINVAL, errno.ENOENT):
+        if isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError, PermissionError)) or                 e.errno in (errno.EINVAL, errno.ENOENT, errno.EACCES, errno.EPERM, errno.EBUSY):
             raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
-                             f"(a path that is not a file and has no characters Windows refuses).")
+                             f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).")
         raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). The folder is fine as a path, so check "
-                         f"that the disk has room and that you may write there, or give --out another folder.")
+                         f"that the disk has room, or give --out another folder.")
     Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
     print(safe(pkg.name))
@@ -1195,8 +1205,9 @@ def main(argv=None):
     finally:
         for stream, old in saved:
             try:
-                stream.reconfigure(errors=old)
-            except (AttributeError, ValueError):
+                if not stream.closed:
+                    stream.reconfigure(errors=old)
+            except (AttributeError, ValueError, OSError):
                 pass
 
 

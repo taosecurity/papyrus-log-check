@@ -1352,6 +1352,79 @@ class TestReviewRound1042(Base):
         self.assertIn(b"??", raw.getvalue())
 
 
+class TestReviewRound2042(Base):
+    """0.4.2 /code-review round 2: the zip is closed after a failing constructor and after a run, permission errors name
+    the folder fix, the environment-variable text reads as one sentence, and main() survives a closed stream."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def test_a_constructor_that_fails_part_way_closes_the_zip(self):
+        from unittest import mock
+        z, _ = self.zip_and_rules()
+        opened = []
+        real = plc.zipfile.ZipFile
+
+        def spy(*a, **k):
+            zf = real(*a, **k)
+            opened.append(zf)
+            return zf
+        with mock.patch.object(plc.zipfile, "ZipFile", side_effect=spy):
+            with mock.patch.object(plc.Package, "_collector_manifest", side_effect=KeyError("boom")):
+                with self.assertRaises(KeyError):
+                    plc.Package(z)
+        self.assertEqual(len(opened), 1)
+        self.assertIsNone(opened[0].fp, "the zip was left open")
+
+    def test_a_finished_run_closes_the_zip(self):
+        z, rules = self.zip_and_rules()
+        opened = []
+        real = plc.zipfile.ZipFile
+        from unittest import mock
+
+        def spy(*a, **k):
+            zf = real(*a, **k)
+            opened.append(zf)
+            return zf
+        with mock.patch.object(plc.zipfile, "ZipFile", side_effect=spy):
+            self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertTrue(opened)
+        self.assertTrue(all(zf.fp is None for zf in opened), "the zip was left open")
+
+    def test_a_permission_error_says_to_give_a_folder_you_can_write_to(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=PermissionError(errno.EACCES, "Permission denied")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("The folder is fine as a path", err)
+
+    def test_the_environment_variable_error_is_one_clear_sentence(self):
+        gone = os.path.join(self.dir, "gone")
+        with self.assertRaises(FileNotFoundError) as cm:
+            plc.newest_zip(gone, "env")
+        self.assertIn("PAPYRUS_LOG_CHECK_LOGS is set to '" + gone + "', which is not a folder.", str(cm.exception))
+
+    def test_main_survives_a_stream_that_is_closed_during_the_run(self):
+        import io
+        from unittest import mock
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="utf-8", errors="strict", newline="")
+        z, rules = self.zip_and_rules()
+        real_run = plc._main
+
+        def closing(argv):
+            code = real_run(argv)
+            console.close()
+            return code
+        with mock.patch.object(plc, "_main", side_effect=closing):
+            with mock.patch.object(plc.sys, "stderr", console):
+                code = plc.main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1))
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 
