@@ -1159,10 +1159,18 @@ def _run(args, opened):
     try:
         os.makedirs(out_dir, exist_ok=True)
         n = 2
-        while os.path.exists(base + ".txt") or os.path.exists(base + ".json"):  # two runs in one second
-            base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
-            n += 1
-        with open(base + ".txt", "x", encoding="utf-8") as f:
+        while True:  # two runs in one second: take the next free name (lexists also sees a dangling link)
+            while os.path.lexists(base + ".txt") or os.path.lexists(base + ".json"):
+                base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
+                n += 1
+            try:
+                f = open(base + ".txt", "x", encoding="utf-8")
+            except FileExistsError:  # another run took the name between the check and now
+                base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
+                n += 1
+                continue
+            break
+        with f:
             partial = base + ".txt"
             f.write(report)
         partial = None
@@ -1171,14 +1179,19 @@ def _run(args, opened):
             partial = base + ".json"
             json.dump(data, f, indent=1, ensure_ascii=False)
         partial = None
-    except OSError as e:
+    except BaseException as e:  # also a non-OSError (unserializable data, Ctrl+C) removes its half-written file
         if partial:
             try:
                 os.remove(partial)
             except OSError:
                 pass
+        if not isinstance(e, OSError):
+            raise
         saved = f" The text report was written in full and is kept: {kept[0]}." if kept else ""
         why = e.strerror or e
+        if isinstance(e, FileExistsError) and kept:  # the .txt was ours, the .json name was taken by another run
+            raise ValueError(f"Can't write the report in {out_dir}: another run took the name {base}.json while this "
+                             f"one was writing. Run the check again.{saved}")
         if e.errno in _DISK_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "
                              f"that the disk has room, or give --out another folder.{saved}")

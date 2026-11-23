@@ -236,6 +236,8 @@ The exit code tells scripts what happened:
 
 Exit code 2 always comes with one line on stderr that names the file or option and the fix. For example, `--root`, `--logs-dir` or `--out` on a path that isn't a usable folder says which option to correct, and a rule file that isn't UTF-8 says to save it as UTF-8.
 
+If the report can't be written, the run exits with code 2 and removes the file it was writing. The `.txt` report is written first, so when only the `.json` fails, the complete `.txt` stays and the error names it. That run still failed, so a script should trust only a run that exited 0 and take the `.json` and `.txt` as a pair.
+
 With `--root`, a rule file that can't be read at all is skipped and listed as SKIPPED in the summary and the report. A bad pattern in the rule file of a mod that isn't loaded never stops the run. A bad pattern in a loaded mod's rule file does stop it, with exit code 2 and the file and pattern named.
 
 ## Rule files

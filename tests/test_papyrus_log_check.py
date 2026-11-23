@@ -1496,20 +1496,66 @@ class TestReviewRound2042(Base):
         import builtins
         real_open = builtins.open
 
-        def fake(path, mode="r", *a, **k):
-            # Another run creates the same report name between the exists check and our open.
-            if str(path).endswith(".txt") and mode == "x":
+        def fake(path, *a, **k):
+            mode = k.get("mode", a[0] if a else "r")
+            # Another run creates the same report name between the exists check and our open (once).
+            if str(path).endswith(".txt") and mode == "x" and not taken:
                 with real_open(path, "w") as other:
                     other.write("other run")
                 taken.append(path)
                 raise FileExistsError(errno.EEXIST, "exists")
-            return real_open(path, mode, *a, **k)
+            return real_open(path, *a, **k)
         with mock.patch("builtins.open", fake):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
+        # The run takes the next free name and succeeds; the other run's file is untouched.
+        self.assertIn(code, (0, 1))
         self.assertEqual(len(taken), 1)
         with open(taken[0], encoding="utf-8") as f:
             self.assertEqual(f.read(), "other run")
+        self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.txt")]), 1)
+        self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.json")]), 1)
+
+    def test_a_name_taken_by_a_dangling_link_is_skipped(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        # os.path.exists says False for a dangling link; lexists says True. Simulate exists() blind to the name.
+        real_lexists = os.path.lexists
+        seen = []
+
+        def fake_lexists(p):
+            if str(p).endswith(".txt") and not seen:
+                seen.append(p)
+                return True
+            return real_lexists(p)
+        with mock.patch("os.path.lexists", fake_lexists):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1))
+        self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.txt")]), 1)
+
+    def test_a_non_os_error_while_writing_the_json_removes_the_half_written_file(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=TypeError("not serializable")):
+            with self.assertRaises(TypeError):
+                self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual([n for n in os.listdir(self.out) if n.endswith(".json")], [])
+
+    def test_a_json_name_taken_by_another_run_gets_its_own_text(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        import builtins
+        real_open = builtins.open
+
+        def fake(path, *a, **k):
+            if str(path).endswith('.json') and 'logcheck-' in str(path):
+                raise FileExistsError(errno.EEXIST, 'exists')
+            return real_open(path, *a, **k)
+        with mock.patch('builtins.open', fake):
+            code, err = self.run_main([z, '--rules', rules, '--out', self.out])
+        self.assertEqual(code, 2)
+        self.assertIn('another run took the name', err)
+        self.assertNotIn('Give --out a folder', err)
 
     def test_a_resource_error_gets_neither_the_disk_text_nor_the_path_text(self):
         import errno
