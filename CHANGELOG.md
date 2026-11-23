@@ -27,9 +27,11 @@ This is a fix release with no new features. The install text and sample outputs 
 - A report that can't be written because the folder is locked or protected now says to give `--out` a folder you can write to, as before, and the full-disk text no longer mentions permissions.
 - A report write that fails part-way no longer leaves a half-written `.txt` or `.json` behind. The report files are created exclusively, so a run never removes or overwrites another run's report, and a text report that was written in full stays when only the JSON fails (the error names it).
 - The error for a failed report write picks its advice by cause: a full disk or an I/O error gets "check that the disk has room", a path or permission problem gets "give --out a folder you can write to", and any other error gets a short "check the folder and the disk" text.
-- Two runs that start in the same second now take the next free report name (`-2`, `-3`) even when the name is taken between the check and the write, and a dangling link counts as taken. If another run takes the `.json` name after the `.txt` was written, the error says so and says to run again.
-- A report write that stops on an error that isn't a file error (such as data that can't be written as JSON) also removes its half-written file.
-- The README and AGENTS.md now say that a failed write exits 2 and that a script should trust a report pair only when the run exited 0.
+- Two runs that start in the same second now take the next free report name pair (`-2`, `-3`) even when a name is taken between the check and the write, and a dangling link counts as taken. If another run takes the `.json` name after the `.txt` was written, the run removes its own `.txt` and writes both files under the next free name. On Windows, a name that another run is deleting is skipped the same way.
+- The search for a free report name stops after 100 names. The error then says to move old reports out of the folder or to give `--out` another folder.
+- A report write that stops on an error that isn't a file error (such as data that can't be written as JSON) also removes its half-written file. It exits with code 2 and a one-line error that names the folder, instead of a Python traceback with exit code 1.
+- Pressing Ctrl+C while a report is being written removes the file being written, even right after it was created.
+- The README and AGENTS.md now say that a failed write exits 2 and that a script should trust a report pair only from a run that exited 0 or 1.
 
 ### Internal
 

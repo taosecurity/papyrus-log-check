@@ -1020,6 +1020,12 @@ def newest_zip(folder, *, from_env=False):
 _DISK_ERRNOS = frozenset((errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO))
 _PATH_ERRNOS = frozenset(getattr(errno, name) for name in (
     "ENOENT", "ENOTDIR", "EISDIR", "EINVAL", "EACCES", "EPERM", "EBUSY", "EROFS", "ENAMETOOLONG", "ELOOP", "EEXIST"))
+_NAME_TRIES = 100  # report names tried per run (-2 ... -100) before giving up
+_REFUSED_TRIES = 3  # PermissionError on this many names means the folder itself refuses
+
+
+class _NamesTaken(ValueError):
+    """Every report name this run tried was taken; the message names the folder and the fix."""
 
 
 def run(args):
@@ -1151,47 +1157,64 @@ def _run(args, opened):
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
     report = text_report(data, args.max_lines)
-    # 0.4.2: each file is created exclusively ("x"), so a run never truncates another run's report, and a file is
-    # listed in `partial` only once this run created it. A failed write removes the file it was writing; a report
-    # that was written completely stays, and the error names it.
+    # 0.4.2: each file is created exclusively ("x"), so a run never truncates another run's report, and `f` holds
+    # only a file this run created. A failed write (any error, Ctrl+C too) closes and removes the file it was
+    # writing; a report that was written completely is in `kept`, stays, and the error names it.
+    stem = base
     kept = []
-    partial = None
+    f = None
     try:
         os.makedirs(out_dir, exist_ok=True)
-        n = 2
-        while True:  # two runs in one second: take the next free name (lexists also sees a dangling link)
-            while os.path.lexists(base + ".txt") or os.path.lexists(base + ".json"):
-                base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
-                n += 1
+        refused = 0
+        for tries in range(_NAME_TRIES):
+            # Two runs in one second: take the next free name pair (-2, -3, ...); lexists also sees a dangling link.
+            base = stem if tries == 0 else f"{stem}-{tries + 1}"
+            if os.path.lexists(base + ".txt") or os.path.lexists(base + ".json"):
+                continue
             try:
                 f = open(base + ".txt", "x", encoding="utf-8")
             except FileExistsError:  # another run took the name between the check and now
-                base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
-                n += 1
                 continue
-            break
-        with f:
-            partial = base + ".txt"
-            f.write(report)
-        partial = None
-        kept.append(base + ".txt")
-        with open(base + ".json", "x", encoding="utf-8") as f:
-            partial = base + ".json"
-            json.dump(data, f, indent=1, ensure_ascii=False)
-        partial = None
-    except BaseException as e:  # also a non-OSError (unserializable data, Ctrl+C) removes its half-written file
-        if partial:
+            except PermissionError:  # Windows: a name another run is deleting; a folder we can't write repeats it
+                refused += 1
+                if refused >= _REFUSED_TRIES:
+                    raise
+                continue
+            with f:
+                f.write(report)
+            kept.append(f.name)
             try:
-                os.remove(partial)
+                f = open(base + ".json", "x", encoding="utf-8")
+            except FileExistsError:  # another run took the .json name: drop our .txt and take the next free pair
+                f = None
+                os.remove(kept.pop())
+                continue
+            with f:
+                json.dump(data, f, indent=1, ensure_ascii=False)
+            kept.append(f.name)
+            f = None
+            break
+        else:
+            raise _NamesTaken(f"Can't write the report in {out_dir}: the first {_NAME_TRIES} report names for this "
+                              f"run ({os.path.basename(stem)}...) are all taken. Move old reports out of the folder, "
+                              f"or give --out another folder.")
+    except BaseException as e:  # also a non-OSError (unserializable data, Ctrl+C) removes its half-written file
+        if f is not None and f.name not in kept:  # the file this run was writing
+            try:
+                f.close()
             except OSError:
                 pass
-        if not isinstance(e, OSError):
-            raise
+            try:
+                os.remove(f.name)
+            except OSError:
+                pass
         saved = f" The text report was written in full and is kept: {kept[0]}." if kept else ""
+        if isinstance(e, _NamesTaken) or not isinstance(e, Exception):  # Ctrl+C and exit go on as they are
+            raise
+        if not isinstance(e, OSError):
+            raise ValueError(f"Can't write the report in {out_dir} ({type(e).__name__}: {e}). This is a bug in "
+                             f"{TOOL}: please report it at {URL}/issues with the --log file.{saved}") from e
         why = e.strerror or e
-        if isinstance(e, FileExistsError) and kept:  # the .txt was ours, the .json name was taken by another run
-            raise ValueError(f"Can't write the report in {out_dir}: another run took the name {base}.json while this "
-                             f"one was writing. Run the check again.{saved}")
         if e.errno in _DISK_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "
                              f"that the disk has room, or give --out another folder.{saved}")
