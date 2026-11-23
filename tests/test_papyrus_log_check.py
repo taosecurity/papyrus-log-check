@@ -2003,6 +2003,108 @@ class TestReviewS2042(Base):
         self.assertNotIn(b"??", raw.getvalue())
 
 
+class TestReviewS3042(Base):
+    """0.4.2 /code-review round S3: a log that went away says to run again, a zip read only calls a damaged zip
+    damaged, an unlistable subfolder and a case clash are named, and an input folder and --out with an odd name work."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def fake_open_raising(self, exc):
+        import builtins
+        real_open = builtins.open
+
+        def fake(path, *a, **k):
+            if str(path).endswith("Papyrus.0.log") and (a[:1] or [k.get("mode")])[0] == "rb":
+                raise exc
+            return real_open(path, *a, **k)
+        return fake
+
+    def test_a_log_that_went_away_says_to_run_again(self):
+        import errno
+        from unittest import mock
+        _, rules = self.zip_and_rules()
+        folder = make_folder(os.path.join(self.dir, "logs"))
+        with mock.patch("builtins.open", self.fake_open_raising(FileNotFoundError(errno.ENOENT, "No such file"))):
+            code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Papyrus.0.log: it is gone", err)
+        self.assertIn("Run the check again", err)
+        self.assertNotIn("Close the program", err)
+
+    def zip_read_raising(self, exc):
+        from unittest import mock
+        real = zipfile.ZipFile.read
+
+        def fake(zf, name, *a, **k):
+            if name.endswith("Papyrus.0.log"):
+                raise exc
+            return real(zf, name, *a, **k)
+        return mock.patch.object(zipfile.ZipFile, "read", fake)
+
+    def test_a_key_error_in_a_zip_read_gets_the_bug_text(self):
+        z, rules = self.zip_and_rules()
+        with self.zip_read_raising(KeyError("Papyrus.0.log")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("This is a bug", err)
+        self.assertNotIn("make the zip again", err)
+
+    def test_out_of_memory_is_not_called_a_damaged_zip(self):
+        z, rules = self.zip_and_rules()
+        with self.zip_read_raising(MemoryError()):
+            with self.assertRaises(MemoryError):
+                self.run_main([z, "--rules", rules, "--out", self.out])
+
+    def test_a_read_after_close_is_a_bug_not_a_damaged_zip(self):
+        pkg = plc.Package(make_zip(self.dir))
+        pkg.close()
+        with self.assertRaises(ValueError) as cm:
+            pkg.text("plugins.txt")
+        self.assertIn("This is a bug", str(cm.exception))
+        self.assertNotIn("make the zip again", str(cm.exception))
+
+    def test_a_subfolder_that_cannot_be_listed_is_named(self):
+        import errno
+        from unittest import mock
+        _, rules = self.zip_and_rules()
+        folder = make_folder(os.path.join(self.dir, "logs"))
+        real = os.scandir
+
+        def fake(path="."):
+            if str(path).endswith("User"):
+                raise PermissionError(errno.EACCES, "Permission denied", path)
+            return real(path)
+        with mock.patch("os.scandir", fake):
+            code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Can't read the folder", err)
+        self.assertIn("User (Permission denied)", err)
+
+    def test_names_that_differ_only_in_case_stop_the_run_and_are_named(self):
+        _, rules = self.zip_and_rules()
+        z = os.path.join(self.dir, "clash.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("Logs/Script/Papyrus.0.log", LOG0)
+            zf.writestr("Logs/Script/papyrus.0.log", "[10:00:00] other\n")
+            zf.writestr("Plugins.txt", PLUGINS)
+        code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Logs/Script/Papyrus.0.log and Logs/Script/papyrus.0.log differ only in upper and lower case", err)
+
+    def test_an_input_folder_and_out_whose_names_are_not_valid_unicode_work(self):
+        _, rules = self.zip_and_rules()
+        name = "caf\ud800" if os.name == "nt" else "caf\udce9"
+        out = os.path.join(self.dir, "out-" + name)
+        try:
+            folder = make_folder(os.path.join(self.dir, name))
+        except (OSError, UnicodeError):
+            self.skipTest("this file system refuses the name")
+        code, err = self.run_main([folder, "--rules", rules, "--out", out])
+        self.assertIn(code, (0, 1), err)
+        self.assertEqual(len(os.listdir(out)), 2)
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 

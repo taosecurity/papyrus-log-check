@@ -179,6 +179,7 @@ class Package:
         self.name = os.path.basename(os.path.normpath(path))
         self.zf = None
         self._logged = set()  # keys of the notes _log_once has written
+        self._clashes = {}  # lower-case path -> the names that differ only in case (see _add)
         self.entries = {}  # lower-case path with / -> (key for _raw, path with /)
         try:
             self._load(path)
@@ -189,12 +190,16 @@ class Package:
     def _load(self, path):
         if os.path.isdir(path):
             self.kind = FOLDER
-            for dirpath, dirnames, filenames in os.walk(path):
+
+            def unreadable(e):  # a subfolder os.walk can't list must not drop its logs without a word
+                raise ValueError(f"Can't read the folder {e.filename} ({e.strerror or e}). Close the program that "
+                                 f"holds it, or copy the logs to another folder and check that copy.") from e
+            for dirpath, dirnames, filenames in os.walk(path, onerror=unreadable):
                 dirnames.sort()
                 for fn in filenames:
                     full = os.path.join(dirpath, fn)
                     norm = os.path.relpath(full, path).replace("\\", "/")
-                    self.entries[norm.lower()] = (full, norm)
+                    self._add(norm, full)
         elif not os.path.isfile(path):
             raise FileNotFoundError(f"{path} was not found.")
         elif path.lower().endswith(".zip") or zipfile.is_zipfile(path):
@@ -207,7 +212,7 @@ class Package:
                 if info.is_dir():
                     continue
                 norm = info.filename.replace("\\", "/").lstrip("/")
-                self.entries[norm.lower()] = (info.filename, norm)
+                self._add(norm, info.filename)
         else:
             self.kind = LOG_FILE
             self.entries[self.name.lower()] = (path, self.name)
@@ -218,6 +223,15 @@ class Package:
         Log.write(f"input: {self.kind} {path}: {len(self.entries)} files, {len(self.logs)} Papyrus log(s), "
                   f"plugins.txt {'found' if self.plugins is not None else 'none'}, manifest {'found' if self.manifest else 'none'}")
 
+    def _add(self, norm, key):
+        """Files are looked up without regard to case. Two names that differ only in case (possible on Linux and in
+        a zip) are both kept aside, and reading that name stops the run (text()), instead of one silently winning."""
+        low = norm.lower()
+        old = self.entries.get(low)
+        if old is not None and old[1] != norm:
+            self._clashes.setdefault(low, [old[1]]).append(norm)
+        self.entries[low] = (key, norm)
+
     def close(self):
         """Lets go of the zip file (0.4.2: run() calls this, so a run that stops on an error doesn't keep the zip locked)."""
         if self.zf is not None:
@@ -225,19 +239,28 @@ class Package:
 
     def _raw(self, key):
         if self.zf is not None:
+            if self.zf.fp is None:  # read after close(): our bug, not a damaged zip
+                raise ValueError(f"internal error: {self.name} was read after it was closed. This is a bug in "
+                                 f"{TOOL}: {_bug_ask()}")
             try:
                 return self.zf.read(key)
+            except (KeyError, MemoryError):
+                raise  # keys come from the zip's own list, so a KeyError is a bug (main() says so); out of memory isn't a damaged zip
             except Exception as e:
                 # any entry Python can't read (damaged or cut-short Deflate, LZMA or BZIP2 data, a compression method
-                # Python can't read such as Deflate64 from Windows Explorer for big zips, an encrypted entry): exit 2
-                # with the entry and the fix, not a traceback
+                # Python can't read such as Deflate64 from Windows Explorer for big zips, an encrypted entry, a drive
+                # that went away): exit 2 with the entry and the fix, not a traceback
                 raise ValueError(f"{self.name}: can't read {key} in the zip ({type(e).__name__}: {e}). The zip is "
-                                 f"damaged or uses a format Python can't read: make the zip again (the log collector, "
-                                 f"or 7-Zip with the Deflate method and no password), or give the log folder "
-                                 f"instead.") from e
+                                 f"damaged, its drive went away, or it uses a format Python can't read: make the zip "
+                                 f"again (the log collector, or 7-Zip with the Deflate method and no password), or "
+                                 f"give the log folder instead.") from e
         try:
             with open(key, "rb") as f:
                 return f.read()
+        except FileNotFoundError as e:
+            raise ValueError(f"Can't read {key}: it is gone (renamed or deleted while the check ran, for example by "
+                             f"the game starting, or a broken link). Run the check again, or copy the logs to another "
+                             f"folder and check that copy.") from e
         except OSError as e:
             raise ValueError(f"Can't read {key} ({e.strerror or e}). Close the program that holds it (the game, or a "
                              f"sync client such as OneDrive: make the file available on this device), or copy the "
@@ -246,7 +269,14 @@ class Package:
     def has(self, norm_lower):
         return norm_lower in self.entries
 
+    def _check_case(self, norm_lower):
+        names = self._clashes.get(norm_lower)
+        if names:
+            raise ValueError(f"{self.name}: {' and '.join(names)} differ only in upper and lower case, so it isn't "
+                             f"clear which one to check. Move or rename all but one of them, then run the check again.")
+
     def text(self, norm_lower):
+        self._check_case(norm_lower)
         raw = self._raw(self.entries[norm_lower][0])
         for enc in ("utf-8-sig", "cp1252"):
             try:
@@ -270,6 +300,7 @@ class Package:
         want = {n.lower() for n in extra_names}
         used += [k for k in self.entries if os.path.basename(k) in want]
         for key in sorted(set(used)):
+            self._check_case(key)
             # surrogatepass: a folder name that isn't valid UTF-8 (Linux) or holds a lone surrogate (Windows) still
             # hashes; every valid name gives the same bytes as plain UTF-8
             h.update(self.entries[key][1].encode("utf-8", "surrogatepass") + b"\0")
@@ -1271,8 +1302,10 @@ class _VersionAction(argparse.Action):
 
 def main(argv=None):
     """Runs the tool. 0.4.2: for the whole call, a character the console's code page can't show no longer stops the
-    run (argparse's own usage and error text included): on stdout and stderr it prints as a \\uXXXX escape, so the
-    Report: and JSON: lines and every error still name their file exactly. The streams' old error mode comes back after."""
+    run (argparse's own usage and error text included): on stdout and stderr it prints as a Python backslash escape
+    (\\xNN, \\uXXXX or \\UXXXXXXXX), so the Report: and JSON: lines and every error still name their file exactly. The
+    mode is set even under python -X utf8, so a name that isn't valid Unicode prints as an escape there too. The
+    streams' old error mode comes back after."""
     saved = []
     for stream in (sys.stdout, sys.stderr):
         try:
