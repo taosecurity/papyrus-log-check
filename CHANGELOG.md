@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 (unreleased)
+
+Defect-free fix pass on 0.4.1 (work in progress).
+
 ## 0.4.1 (2026-11-22)
 
 ### What's new
