@@ -997,7 +997,7 @@ def text_report(data, max_lines):
 
 # ----------------------------------------------------------------------------- main
 
-def newest_zip(folder, from_env=False):
+def newest_zip(folder, *, from_env=False):
     """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time.
     `from_env` is True when the folder came from PAPYRUS_LOG_CHECK_LOGS (not --logs-dir), for the error text."""
     if not os.path.isdir(folder):
@@ -1036,7 +1036,7 @@ def _run(args, opened):
             from_env = True
         if not logs_dir:
             raise ValueError("Give a log file, a folder or a zip, or use --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS.")
-        zpath = newest_zip(logs_dir, from_env)
+        zpath = newest_zip(logs_dir, from_env=from_env)
     pkg = Package(zpath)
     opened.append(pkg)
     if not pkg.logs:
@@ -1145,21 +1145,28 @@ def _run(args, opened):
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
     report = text_report(data, args.max_lines)
+    made = []  # the report files this run created, removed again if the write fails part-way
     try:
         os.makedirs(out_dir, exist_ok=True)
         n = 2
         while os.path.exists(base + ".txt") or os.path.exists(base + ".json"):  # two runs in one second
             base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
             n += 1
+        made.append(base + ".txt")
         with open(base + ".txt", "w", encoding="utf-8") as f:
             f.write(report)
+        made.append(base + ".json")
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, ensure_ascii=False)
     except OSError as e:
-        path_problem = (errno.EINVAL, errno.ENOENT, errno.EACCES, errno.EPERM, errno.EBUSY, errno.EROFS,
-                        errno.ENAMETOOLONG)
-        if (isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError, PermissionError))
-                or e.errno in path_problem):
+        for leftover in made:
+            try:
+                os.remove(leftover)
+            except OSError:
+                pass
+        # Only these errors mean the disk itself is the problem; every other one is about the path.
+        disk_problem = (errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO)
+        if e.errno not in disk_problem:
             raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
                              f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).")
         raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). The folder is fine as a path, so check "

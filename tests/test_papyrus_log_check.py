@@ -1419,7 +1419,7 @@ class TestReviewRound2042(Base):
         self.assertIn("--logs-dir '" + gone + "' is not a folder", str(cm.exception))
 
     def test_main_survives_a_stream_that_is_closed_during_the_run(self):
-        # A guard: a closed stream makes reconfigure raise ValueError, which main() already skipped; this keeps it so.
+        # A guard, not a test of one change: a stream closed during the run must not crash main() or change the code.
         import io
         from unittest import mock
         raw = io.BytesIO()
@@ -1448,6 +1448,29 @@ class TestReviewRound2042(Base):
             self.assertEqual(code, 2)
             self.assertIn("Give --out a folder you can write to", err)
             self.assertNotIn("disk has room", err)
+
+    def test_a_failed_write_leaves_no_half_written_report(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_an_unlisted_errno_gets_the_path_text_not_the_disk_text(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ELOOP, "Too many levels of symbolic links")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("disk has room", err)
+
+    def test_newest_zip_takes_the_env_flag_by_keyword_only(self):
+        with self.assertRaises(TypeError):
+            plc.newest_zip(self.dir, "--logs-dir")
 
     def test_a_full_disk_still_says_to_check_the_room(self):
         import errno
