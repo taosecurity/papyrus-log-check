@@ -24,16 +24,19 @@ Before 0.4.1 the line said only `NOT SEEN`, so the two found lines were easy to 
 - A NOT LOADED mod's report now says what was checked. Before, it always said the plugin wasn't active in plugins.txt, even for a rule file that names only an SFSE plugin DLL. Now it names plugins.txt, the input's list of SFSE plugin DLLs, or both.
 - The list of rule files that weren't checked (with `--root`) gives the same sentence under each one.
 - The JSON has the sentence in a new `not_loaded_reason` key, in `mods` and in `not_loaded`. No other key changed.
-- A mod that never logged but whose explain rules matched now shows `NOT SEEN (N found)` on the screen and in the report's summary, so the found lines aren't missed. N is the number of lines the explain rules found.
+- A mod that never logged but whose explain rules matched now shows `NOT SEEN (N found)` on the screen and in the report's summary, so the found lines aren't missed. N is the number of matches the explain rules found (a line two rules match counts twice).
 - The JSON status stays `NOT SEEN`. Each checked mod gets a new `explain_found` key with the number. The exit code doesn't change.
 - A bad `min` on an explain rule now gives one clear error ("only expect rules use it") instead of a type error first and that error after the fix.
 - An explain rule may now have `"min": 1` or `"always": false`. They say what an explain rule does anyway, so they change nothing.
 - A forbid rule with `min` or `always` is now refused with an error that names the file, the rule and the fix. Before, both were accepted and ignored.
 - A rule file whose only plugins are official masters now counts as loaded, like `Starfield.esm` before. This covers the DLC masters, the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. The game loads them without a plugins.txt line, so before, such a file was always NOT LOADED.
 - When a collector manifest lists the Data folder's plugins, an official master missing from that list makes the file NOT LOADED, and the report says so.
+- An empty DLL or Data plugin list in a collector manifest whose game folder wasn't found (an empty `gamePath`) now counts as no list. Before, every rule file that names a DLL was NOT LOADED then. An empty Data plugin list always counts as no list.
+- A manifest list may hold plain names as well as `{"name": ...}` entries. A list with no usable name is ignored.
 
 ### Changes
 
+- Rule files: a forbid rule with `min` or `always` loaded in 0.4.0 but is refused now (see Fixes). Remove the field to load the file again.
 - `examples/example-quiet.logrules.json` is a new made-up rule file that shows the `NOT SEEN (N found)` line. The README's Results section and AGENTS.md use it, and a test checks its output.
 
 ### Download

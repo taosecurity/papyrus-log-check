@@ -66,7 +66,8 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   `NOT LOADED <mod> <version>` line. A run where every line says NOT LOADED checked nothing, and exits with code 0.
   A rule file whose only plugins are official masters (Starfield.esm, the DLC, SFBGS*.esm,
   BlueprintShips-<official>.esm) counts as loaded without a plugins.txt line; only a collector manifest's
-  `listing.dataPlugins` that lacks the master makes it NOT LOADED (Starfield.esm always counts).
+  `listing.dataPlugins` that lacks the master makes it NOT LOADED (Starfield.esm always counts). An empty
+  `dataPlugins` list, or an empty listing in a manifest whose `gamePath` is empty, counts as no listing.
 
 - Recheck an older log as an older version of the mod:
 
@@ -99,7 +100,7 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   and `.json`. They are never overwritten. stdout gets one line per mod (`PASS`, `FAIL`, `FOUND`, `NOT SEEN`,
   `NOT LOADED`), any `SKIPPED` rule files and `FLAG` lines, then the two report paths. stderr gets the byline.
   A mod that never logged but whose explain rules matched shows `NOT SEEN (N found)` there and in the report's
-  summary (N = the lines its explain rules found); its JSON `status` stays `NOT SEEN`, and every checked mod has
+  summary (N = the matches its explain rules found; a line two rules match counts twice); its JSON `status` stays `NOT SEEN`, and every checked mod has
   the number in `explain_found`.
   The JSON lists checked mods in `mods` and, with `--root`, the unchecked ones in `not_loaded`. Each NOT LOADED
   entry (in either list) has `not_loaded_reason`, a sentence that names what was checked (plugins.txt, the SFSE

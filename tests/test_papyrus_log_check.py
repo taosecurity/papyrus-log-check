@@ -1102,5 +1102,53 @@ class TestOfficialMasters041(Base):
         self.assertEqual(res["plugin_state"], "active")   # no usable listing: counts as loaded
 
 
+class TestListings041Review(Base):
+    """0.4.1 code review: the collector's empty listings when it found no game folder, and plain-string entries."""
+
+    def check_manifest(self, rules, listing, **extra):
+        global MANIFEST
+        saved = MANIFEST
+        try:
+            MANIFEST = dict(saved, listing=listing, **extra)
+            return self.check(rules)
+        finally:
+            MANIFEST = saved
+
+    def test_empty_data_listing_counts_as_no_listing(self):
+        for extra in ({"gamePath": ""}, {"gamePath": None}, {}, {"gamePath": "C:\\Games\\Starfield"}):
+            with self.subTest(extra=extra):
+                _, res = self.check_manifest(dict(RULES, plugins=["ShatteredSpace.esm"]),
+                                             {"sfsePluginDlls": [], "dataPlugins": []}, **extra)
+                self.assertEqual(res["plugin_state"], "active")
+                self.assertNotEqual(res["status"], plc.NOT_LOADED)
+
+    def test_empty_dll_listing_without_a_game_folder_is_unknown(self):
+        rules = dict(RULES, plugins=[], dlls=["MyPlugin.dll"])
+        for extra in ({"gamePath": ""}, {"gamePath": None}):
+            with self.subTest(extra=extra):
+                _, res = self.check_manifest(rules, {"sfsePluginDlls": [], "dataPlugins": []}, **extra)
+                self.assertEqual(res["plugin_state"], "unknown")
+                self.assertNotEqual(res["status"], plc.NOT_LOADED)
+        # with a game folder, an empty SFSE plugins folder is real: the DLL is missing (0.4.0)
+        _, res = self.check_manifest(rules, {"sfsePluginDlls": []}, gamePath="C:\\Games\\Starfield")
+        self.assertEqual(res["plugin_state"], "missing")
+        _, res = self.check_manifest(rules, {"sfsePluginDlls": []})
+        self.assertEqual(res["plugin_state"], "missing")
+
+    def test_plain_string_entries_are_names(self):
+        _, res = self.check_manifest(dict(RULES, plugins=["ShatteredSpace.esm"]),
+                                     {"sfsePluginDlls": ["MyDll.dll"], "dataPlugins": ["ShatteredSpace.esm"]})
+        self.assertEqual(res["plugin_state"], "active")
+        _, res = self.check_manifest(dict(RULES, plugins=["Constellation.esm"]),
+                                     {"dataPlugins": ["ShatteredSpace.esm", {"name": "Starfield.esm"}]})
+        self.assertEqual(res["plugin_state"], "missing")
+        _, res = self.check_manifest(dict(RULES, plugins=[], dlls=["MyDll.dll"]), {"sfsePluginDlls": ["MyDll.dll"]})
+        self.assertEqual(res["plugin_state"], "active")
+
+    def test_a_listing_with_no_usable_names_is_ignored(self):
+        _, res = self.check_manifest(dict(RULES, plugins=["Constellation.esm"]), {"dataPlugins": [1, {"size": 3}]})
+        self.assertEqual(res["plugin_state"], "active")
+
+
 if __name__ == "__main__":
     unittest.main()

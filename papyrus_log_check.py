@@ -301,19 +301,37 @@ class Package:
     def sfse_dlls(self):
         """SFSE plugin DLL names (lower case): from a collector's manifest listing, else the .dll files in the
         folder or zip. None when neither says anything."""
-        listing = self.manifest.get("listing", {}).get("sfsePluginDlls")
+        listing = self._listing("sfsePluginDlls")
         if listing is not None:
-            return {str(d.get("name", "")).lower() for d in listing if isinstance(d, dict)}
+            return listing
         dlls = {os.path.basename(k) for k in self.entries if k.endswith(".dll")}
         return dlls or None
 
     def data_plugins(self):
         """0.4.1: the plugin files in the game's Data folder (lower case), from a collector's manifest listing
-        (listing.dataPlugins). None when the input has no such listing."""
-        listing = self.manifest.get("listing", {}).get("dataPlugins")
+        (listing.dataPlugins). None when the input has no such listing, or an empty one (a real Data folder always
+        holds Starfield.esm, so an empty list means the folder wasn't read)."""
+        return self._listing("dataPlugins") or None
+
+    def _listing(self, key):
+        """0.4.1: the names (lower case) in the manifest's listing.<key>, whose entries are {"name": ...} objects
+        or plain strings. None when there is no listing, when the collector didn't find the game folder (an empty
+        gamePath, so its empty lists say nothing), or when no entry has a usable name."""
+        listing = self.manifest.get("listing", {}).get(key)
         if listing is None:
             return None
-        return {str(d.get("name", "")).lower() for d in listing if isinstance(d, dict)}
+        if not listing and "gamePath" in self.manifest and not self.manifest.get("gamePath"):
+            Log.write(f"manifest.json: listing.{key} is empty because the game folder wasn't found; ignored")
+            return None
+        names = set()
+        for d in listing:
+            name = d.get("name") if isinstance(d, dict) else d if isinstance(d, str) else None
+            if name:
+                names.add(str(name).lower())
+        if listing and not names:
+            Log.write(f"manifest.json: listing.{key} has no entry with a name; ignored")
+            return None
+        return names
 
     def crash_logs(self):
         out = []

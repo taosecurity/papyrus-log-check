@@ -193,6 +193,7 @@ You can give it any of these three kinds of input:
 A folder or zip may also hold these files:
 
 - **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, every rule file is checked. A rule file whose only plugins are official masters always counts as active, because the game loads them without listing them there: `Starfield.esm`, the DLC masters (`Constellation.esm`, `OldMars.esm`, `ShatteredSpace.esm`), the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. When the input is a collector package whose manifest lists the Data folder's plugins (`listing.dataPlugins`), an official master that isn't in that list doesn't count (`Starfield.esm` always does). In a file that also names other plugins, only those are looked up.
+- **The collector's lists** in `manifest.json` (`listing.dataPlugins` and `listing.sfsePluginDlls`) are used as above. An empty Data plugin list counts as no list, and so do both empty lists when the collector didn't find the game folder (an empty `gamePath`).
 - **Crash logs** (`Crashlog*.txt`, `crash-*.log`, or files in a `crashlogs` folder) are listed as FLAG lines.
 - **An SFSE plugin's own log** is checked when a rule file names it in `logs`.
 
