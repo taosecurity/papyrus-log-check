@@ -31,8 +31,8 @@ Before 0.4.1 the line said only `NOT SEEN`, so the two found lines were easy to 
 - A forbid rule with `min` or `always` is now refused with an error that names the file, the rule and the fix. Before, both were accepted and ignored.
 - A rule file whose only plugins are official masters now counts as loaded, like `Starfield.esm` before. This covers the DLC masters, the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. The game loads them without a plugins.txt line, so before, such a file was always NOT LOADED.
 - When a collector manifest lists the Data folder's plugins, an official master missing from that list makes the file NOT LOADED, and the report says so.
-- An empty DLL or Data plugin list in a collector manifest whose game folder wasn't found (an empty `gamePath`) now counts as no list. Before, every rule file that names a DLL was NOT LOADED then. An empty Data plugin list always counts as no list.
-- A manifest list may hold plain names as well as `{"name": ...}` entries. A list with no usable name is ignored.
+- An empty DLL or Data plugin list in a collector manifest whose game folder wasn't found (an empty `gamePath`) now counts as no list. Before, every rule file that names a DLL was NOT LOADED then. A Data plugin list without `Starfield.esm` (an empty or cut-short one) always counts as no list.
+- A manifest list may hold plain names as well as `{"name": ...}` entries, and a path is cut to its file name. A list with no usable name is ignored.
 
 ### Changes
 

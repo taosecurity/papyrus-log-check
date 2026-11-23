@@ -300,38 +300,50 @@ class Package:
 
     def sfse_dlls(self):
         """SFSE plugin DLL names (lower case): from a collector's manifest listing, else the .dll files in the
-        folder or zip. None when neither says anything."""
-        listing = self._listing("sfsePluginDlls")
-        if listing is not None:
+        folder or zip. None when neither says anything, and when a manifest listing was there but ignored (a
+        collector package doesn't copy the DLLs, so stray .dll files in it say nothing)."""
+        present, listing = self._listing("sfsePluginDlls")
+        if present:
             return listing
         dlls = {os.path.basename(k) for k in self.entries if k.endswith(".dll")}
         return dlls or None
 
     def data_plugins(self):
         """0.4.1: the plugin files in the game's Data folder (lower case), from a collector's manifest listing
-        (listing.dataPlugins). None when the input has no such listing, or an empty one (a real Data folder always
-        holds Starfield.esm, so an empty list means the folder wasn't read)."""
-        return self._listing("dataPlugins") or None
+        (listing.dataPlugins). None when the input has no such listing, or one without Starfield.esm (a real Data
+        folder always holds it, so such a list is empty or cut short and says nothing)."""
+        _, listing = self._listing("dataPlugins")
+        if listing is not None and "starfield.esm" not in listing:
+            self._log_once("dataPlugins-nosf", "manifest.json: listing.dataPlugins has no Starfield.esm; ignored")
+            return None
+        return listing
+
+    def _log_once(self, key, text):
+        seen = self.__dict__.setdefault("_logged", set())
+        if key not in seen:
+            seen.add(key)
+            Log.write(text)
 
     def _listing(self, key):
-        """0.4.1: the names (lower case) in the manifest's listing.<key>, whose entries are {"name": ...} objects
-        or plain strings. None when there is no listing, when the collector didn't find the game folder (an empty
-        gamePath, so its empty lists say nothing), or when no entry has a usable name."""
+        """0.4.1: (present, names) for the manifest's listing.<key>, whose entries are {"name": ...} objects or
+        plain strings (a path is cut to its file name). present is False when there is no listing; names is None
+        when there is none, when the collector didn't find the game folder (an empty gamePath, so its empty lists
+        say nothing) or when no entry has a usable name. Each reason is logged once."""
         listing = self.manifest.get("listing", {}).get(key)
         if listing is None:
-            return None
+            return False, None
         if not listing and "gamePath" in self.manifest and not self.manifest.get("gamePath"):
-            Log.write(f"manifest.json: listing.{key} is empty because the game folder wasn't found; ignored")
-            return None
+            self._log_once(key, f"manifest.json: listing.{key} is empty because the game folder wasn't found; ignored")
+            return True, None
         names = set()
         for d in listing:
-            name = d.get("name") if isinstance(d, dict) else d if isinstance(d, str) else None
-            if name:
-                names.add(str(name).lower())
+            name = d.get("name") if isinstance(d, dict) else d
+            if isinstance(name, str) and name.strip():
+                names.add(os.path.basename(name.strip().replace("\\", "/")).lower())
         if listing and not names:
-            Log.write(f"manifest.json: listing.{key} has no entry with a name; ignored")
-            return None
-        return names
+            self._log_once(key, f"manifest.json: listing.{key} has no entry with a name; ignored")
+            return True, None
+        return True, names
 
     def crash_logs(self):
         out = []

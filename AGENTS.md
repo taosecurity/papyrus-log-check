@@ -66,8 +66,9 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   `NOT LOADED <mod> <version>` line. A run where every line says NOT LOADED checked nothing, and exits with code 0.
   A rule file whose only plugins are official masters (Starfield.esm, the DLC, SFBGS*.esm,
   BlueprintShips-<official>.esm) counts as loaded without a plugins.txt line; only a collector manifest's
-  `listing.dataPlugins` that lacks the master makes it NOT LOADED (Starfield.esm always counts). An empty
-  `dataPlugins` list, or an empty listing in a manifest whose `gamePath` is empty, counts as no listing.
+  `listing.dataPlugins` that lacks the master makes it NOT LOADED (Starfield.esm always counts). A
+  `dataPlugins` list without Starfield.esm, or an empty listing in a manifest whose `gamePath` is empty, counts
+  as no listing.
 
 - Recheck an older log as an older version of the mod:
 

@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1148,6 +1149,50 @@ class TestListings041Review(Base):
     def test_a_listing_with_no_usable_names_is_ignored(self):
         _, res = self.check_manifest(dict(RULES, plugins=["Constellation.esm"]), {"dataPlugins": [1, {"size": 3}]})
         self.assertEqual(res["plugin_state"], "active")
+
+    # round 2
+    def package(self, manifest, files=()):
+        global MANIFEST
+        saved = MANIFEST
+        try:
+            MANIFEST = manifest
+            path = make_zip(self.dir)
+        finally:
+            MANIFEST = saved
+        if files:
+            with zipfile.ZipFile(path, "a") as z:
+                for name in files:
+                    z.writestr(name, "x")
+        return plc.Package(path)
+
+    def test_an_ignored_dll_listing_does_not_fall_back_to_stray_dlls(self):
+        pkg = self.package(dict(MANIFEST, gamePath="", listing={"sfsePluginDlls": []}), ["stray\\Other.dll"])
+        self.assertIsNone(pkg.sfse_dlls())
+        pkg = self.package({"tool": "x"}, ["stray\\Other.dll"])   # no listing at all: the .dll files count (0.4.0)
+        self.assertEqual(pkg.sfse_dlls(), {"other.dll"})
+
+    def test_a_data_listing_without_starfield_esm_is_ignored(self):
+        _, res = self.check_manifest(dict(RULES, plugins=["ShatteredSpace.esm"]), {"dataPlugins": ["Some.esp"]})
+        self.assertEqual(res["plugin_state"], "active")
+        pkg = self.package(dict(MANIFEST, listing={"dataPlugins": [{"name": "Some.esp"}]}))
+        self.assertIsNone(pkg.data_plugins())
+
+    def test_names_are_cut_to_the_file_name_and_must_be_strings(self):
+        pkg = self.package(dict(MANIFEST, listing={
+            "sfsePluginDlls": ["Data\\SFSE\\Plugins\\MyDll.dll", {"name": "C:/x/Two.dll"}, {"name": ["x"]}, 5],
+            "dataPlugins": [" Starfield.esm ", {"name": 3}]}))
+        self.assertEqual(pkg.sfse_dlls(), {"mydll.dll", "two.dll"})
+        self.assertEqual(pkg.data_plugins(), {"starfield.esm"})
+
+    def test_an_ignored_listing_is_logged_once(self):
+        pkg = self.package(dict(MANIFEST, gamePath="", listing={"sfsePluginDlls": [], "dataPlugins": []}))
+        lines = []
+        with unittest.mock.patch.object(plc.Log, "write", lines.append):
+            for _ in range(3):
+                pkg.sfse_dlls()
+                pkg.data_plugins()
+        self.assertEqual(len([x for x in lines if "sfsePluginDlls" in x]), 1)
+        self.assertEqual(len([x for x in lines if "dataPlugins" in x]), 1)
 
 
 if __name__ == "__main__":
