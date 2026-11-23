@@ -21,7 +21,7 @@ Usage:
   python -I papyrus_log_check.py INPUT --rules mymod.logrules.json [--rules other.json]
   python -I papyrus_log_check.py INPUT --root DIR [--mods A,B]
   python -I papyrus_log_check.py --logs-dir DIR ...      (newest zip in DIR)
-Exit code: 0 = no FAIL, 1 = at least one FAIL, 2 = usage, rule file or input error.
+Exit code: 0 = no FAIL, 1 = at least one FAIL, 2 = usage, rule file or input error, or a report that couldn't be written.
 """
 
 import argparse
@@ -34,6 +34,7 @@ import re
 import sys
 import traceback
 import zipfile
+import zlib
 
 TOOL = "papyrus-log-check"
 VERSION = "0.4.2"
@@ -223,7 +224,15 @@ class Package:
 
     def _raw(self, key):
         if self.zf is not None:
-            return self.zf.read(key)
+            try:
+                return self.zf.read(key)
+            except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, RuntimeError) as e:
+                # a damaged or cut-short entry, a compression method Python can't read (Deflate64 from Windows
+                # Explorer for big zips) or an encrypted entry: exit 2 with the entry and the fix, not a traceback
+                raise ValueError(f"{self.name}: can't read {key} in the zip ({type(e).__name__}: {e}). The zip is "
+                                 f"damaged or uses a format Python can't read: make the zip again (the log collector, "
+                                 f"or 7-Zip with the Deflate method and no password), or give the log folder "
+                                 f"instead.") from e
         with open(key, "rb") as f:
             return f.read()
 
@@ -261,8 +270,9 @@ class Package:
     def _json(self, name):
         if not self.has(name):
             return None
+        text = self.text(name)  # outside the try: a zip entry that can't be read stops the run (exit 2), it isn't "no JSON"
         try:
-            return json.loads(self.text(name))
+            return json.loads(text)
         except ValueError:
             return None
 
@@ -532,6 +542,10 @@ def find_rule_files(root, mods=None):
     """Rule files: --mods names (project folders, which may be nested like Group\\Mod, or .json paths), else every
     <root>/*/testplan/logrules.json and <root>/*/*/testplan/logrules.json (mods kept inside a group folder)."""
     if mods:
+        if not all(m.lower().endswith(".json") for m in mods) and not os.path.isdir(root):
+            raise FileNotFoundError(f"--root {root} is not a folder, so --mods can't find the project folders in it. "
+                                    f"Give --root the folder that holds your project folders, or give --mods rule "
+                                    f"file paths (.json).")
         out = []
         for m in mods:
             p = m if m.lower().endswith(".json") else os.path.join(root, m, "testplan", "logrules.json")
@@ -542,8 +556,13 @@ def find_rule_files(root, mods=None):
     if not os.path.isdir(root):
         raise FileNotFoundError(f"--root {root} is not a folder. Give --root the folder that holds your project folders, "
                                 f"or use --rules FILE.")
+    try:
+        names = sorted(os.listdir(root))
+    except OSError as e:
+        raise OSError(f"Can't read the --root folder {root} ({e.strerror or e}). Give --root a folder you can read, "
+                      f"or use --rules FILE.") from e
     out = []
-    for d in sorted(os.listdir(root)):
+    for d in names:
         top = os.path.join(root, d)
         p = os.path.join(top, "testplan", "logrules.json")
         if os.path.isfile(p):
@@ -1006,7 +1025,13 @@ def newest_zip(folder, *, from_env=False):
                                     f"Set it to an existing folder that holds log zips, or give --logs-dir.")
         raise FileNotFoundError(f"--logs-dir '{folder}' is not a folder. Give an existing folder that holds log zips "
                                 f"(or set PAPYRUS_LOG_CHECK_LOGS).")
-    zips = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".zip")]
+    try:
+        names = os.listdir(folder)
+    except OSError as e:
+        where = "the PAPYRUS_LOG_CHECK_LOGS folder" if from_env else "the --logs-dir folder"
+        raise OSError(f"Can't read {where} {folder} ({e.strerror or e}). Give a folder you can read that holds log "
+                      f"zips, or give the zip itself as INPUT.") from e
+    zips = [os.path.join(folder, f) for f in names if f.lower().endswith(".zip")]
     if not zips:
         raise FileNotFoundError(f"There is no .zip in {folder}.")
 
@@ -1165,7 +1190,9 @@ def _run(args, opened):
             base = f"{stem}-{n}"
             n += 1
         for path in (base + ".txt", base + ".json"):
-            with open(path, "x", encoding="utf-8") as f:
+            # backslashreplace: a name that isn't valid Unicode (a non-UTF-8 file name on Linux, a lone surrogate in
+            # a rule file) is written as an escape instead of stopping the run; every other character is plain UTF-8
+            with open(path, "x", encoding="utf-8", errors="backslashreplace") as f:
                 created.append(path)
                 if path.endswith(".txt"):
                     f.write(report)
@@ -1187,8 +1214,13 @@ def _run(args, opened):
                              f"{TOOL}: {ask}{saved}") from e
         why = e.strerror or e
         if e.errno in _DISK_ERRNOS:
-            raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "
-                             f"that the disk has room, or give --out another folder.{saved}")
+            raise ValueError(f"Can't write the report in {out_dir} ({why}). Check that the disk has room and is still "
+                             f"connected, or give --out another folder.{saved}")
+        if e.errno in _PATH_ERRNOS and created and path not in created:
+            # the .txt is written and the .json couldn't be opened, so the folder is usable: that one name is the problem
+            raise ValueError(f"Can't create {path} ({why}), though this run has just written in the same folder. "
+                             f"Another program (antivirus or a sync client such as OneDrive) may be holding that "
+                             f"name: run again, or give --out another folder.{saved}")
         if e.errno in _PATH_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). Give --out a folder you can write to "
                              f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).{saved}")
@@ -1223,13 +1255,14 @@ class _VersionAction(argparse.Action):
 
 
 def main(argv=None):
-    """Runs the tool. 0.4.2: for the whole call, a character the console's code page can't show prints as ? instead
-    of stopping the run (argparse's own usage and error text included); the streams' old error mode comes back after."""
+    """Runs the tool. 0.4.2: for the whole call, a character the console's code page can't show no longer stops the
+    run (argparse's own usage and error text included): on stdout it prints as ?, and on stderr as a \\uXXXX escape
+    (Python's own default there), so an error still names its file exactly. The streams' old error mode comes back after."""
     saved = []
-    for stream in (sys.stdout, sys.stderr):
+    for stream, mode in ((sys.stdout, "replace"), (sys.stderr, "backslashreplace")):
         try:
             old = stream.errors
-            stream.reconfigure(errors="replace")
+            stream.reconfigure(errors=mode)
             saved.append((stream, old))
         except (AttributeError, ValueError):
             pass
@@ -1289,7 +1322,12 @@ def _main(argv):
         Log.write(f"arguments: {' '.join(sys.argv[1:] if argv is None else argv)}")
         return run(args)
     except (OSError, ValueError, zipfile.BadZipFile, KeyError) as e:
-        print(f"{TOOL}: {safe(e)}", file=sys.stderr)
+        if isinstance(e, KeyError):  # no code raises KeyError on purpose, so one is a bug, not a bad input
+            print(f"{TOOL}: internal error (KeyError: {safe(e)}). This is a bug in {TOOL}: please run it again with "
+                  f"--log FILE (a .txt file outside the input folder) and report it at {URL}/issues with that log "
+                  f"file attached.", file=sys.stderr)
+        else:
+            print(f"{TOOL}: {safe(e)}", file=sys.stderr)
         Log.write("stopped:\n" + traceback.format_exc())
         return 2
     finally:

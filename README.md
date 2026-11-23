@@ -232,9 +232,11 @@ The exit code tells scripts what happened:
 
 - 0 means no rule failed.
 - 1 means at least one rule failed.
-- 2 means the arguments were wrong, a rule file was bad, or the input couldn't be read.
+- 2 means the arguments were wrong, a rule file was bad, the input couldn't be read, or the report couldn't be written.
 
-Exit code 2 always comes with one line on stderr that names the file or option and the fix. For example, `--root`, `--logs-dir` or `--out` on a path that isn't a usable folder says which option to correct, and a rule file that isn't UTF-8 says to save it as UTF-8.
+With exit code 2, the error is on stderr. The tool's own errors come after the banner line and are one line that names the file or option and the fix. For example, `--root`, `--logs-dir` or `--out` on a path that isn't a usable folder says which option to correct, a rule file that isn't UTF-8 says to save it as UTF-8, and a zip entry that can't be read (a damaged zip, or one made with a compression method Python can't read) says to make the zip again.
+
+A bad option value, such as `--max-lines abc`, gets Python's usage text and its own short error instead, with no banner. A character that your console can't show is printed as `?` in the summary on stdout and as a `\uXXXX` escape in errors on stderr, so an error still names its file exactly.
 
 If the report can't be written, the run exits with code 2 and one error that names the folder or file and the fix. It removes nothing: when the run had already created report files, the error names them and says to delete them, because that report is incomplete. If another run or program makes a report file of the same name while this run is writing, the error names that file and says to run again or give `--out` another folder. A script should take the `.json` and `.txt` as a pair only from a run that exited 0 or 1, and treat exit code 2 as no report pair.
 

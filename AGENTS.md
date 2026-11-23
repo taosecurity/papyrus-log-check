@@ -109,7 +109,9 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   plugin DLL list, or both).
 - **Exit codes:** 0 = no rule failed (FOUND counts as no failure); 1 = at least one FAIL; 2 = bad arguments, a bad
   rule file (the message names the file and the field), a rule file that isn't UTF-8, a `--root`, `--logs-dir` or
-  `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read.
+  `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read
+  (a zip entry that is damaged or uses a compression method Python can't read says to make the zip again). A bad
+  option value gets Python's usage line and error instead of the tool's one-line error.
   A failed report write also exits 2 and removes nothing: the error names any report file the run created, to
   delete, and a report name another run made meanwhile, with the fix (run again or another `--out`). Trust a
   report pair only when the run exited 0 or 1. Exit 2 means no report pair.

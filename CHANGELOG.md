@@ -4,7 +4,7 @@
 
 ### What's new
 
-This is a fix release with no new features. The install text and sample outputs in the README and AGENTS.md now name the current version, and a test keeps them from going stale again. A bad folder or output path, or a rule file that isn't UTF-8, now gets an error that says what to do. A mod name that your console can't show no longer stops the run.
+This is a fix release with no new features. The install text and sample outputs in the README and AGENTS.md now name the current version, and a test keeps them from going stale again. Bad folders, output paths, rule files and damaged zips now get an error that says what to do, and a report that can't be written gets a clear error with exit code 2. A mod name that your console can't show no longer stops the run.
 
 ### Example
 
@@ -18,18 +18,23 @@ This is a fix release with no new features. The install text and sample outputs 
 
 - The README and AGENTS.md install steps, the banner in the README's sample outputs and the "run once on" line in AGENTS.md named 0.4.0. They now name the current version.
 - A new test fails when any of those version strings differs from the tool's version again. CHANGELOG.md is history and is exempt.
-- `--root`, `--logs-dir` and `--out` on a path that isn't a usable folder now give one error that names the option and the fix, instead of a raw Windows error. The exit code is 2.
+- `--root`, `--logs-dir` and `--out` on a path that isn't a usable folder, or on a folder that can't be read, now give one error that names the option and the fix, instead of a raw Windows error. The exit code is 2.
+- `--mods` with project names and a `--root` that doesn't exist now says that `--root` is wrong. Before, it said the mod's rule file was missing.
+- A folder that comes from the environment variable `PAPYRUS_LOG_CHECK_LOGS` is named as such in its error, not blamed on `--logs-dir`.
 - A rule file that isn't UTF-8 (for example a UTF-16 file saved by Notepad) now gets an error that says so and tells you to save it as UTF-8. Before, the error blamed commas.
-- A mod name that the console's code page can't show now prints as `?` on the screen instead of stopping the run. The report and the JSON keep the real name. This now also covers the usage text that argparse prints for a bad option, and the console's old setting comes back when the run ends.
-- A folder that comes from the environment variable `PAPYRUS_LOG_CHECK_LOGS` is now named as such in the "is not a folder" error, not blamed on `--logs-dir`.
-- A report that can't be written for another reason, such as a full disk, now says that reason and what to check. Before, every write error blamed the `--out` path.
-- The log zip is now closed when a run ends, including a run that stops on an error, so the file isn't left locked on Windows. This now also holds when the zip can't be read part-way through.
-- A report that can't be written because the folder is locked or protected now says to give `--out` a folder you can write to, as before, and the full-disk text no longer mentions permissions.
+- A zip whose entries are damaged, cut short, encrypted or made with a compression method Python can't read (such as Deflate64 from Windows Explorer) now exits with code 2 and an error that names the entry and says to make the zip again. Before, it ended in a Python traceback with exit code 1, and a damaged manifest.json was silently ignored.
+- The log zip is now closed when a run ends, including a run that stops on an error, so the file isn't left locked on Windows.
+- A character that the console's code page can't show no longer stops the run. On stdout it prints as `?`, and in errors on stderr as a `\uXXXX` escape, so an error still names its file exactly. This also covers the usage text for a bad option. The report and the JSON keep the real name, and the console's old setting comes back when the run ends.
+- A name that isn't valid Unicode (such as a non-UTF-8 file name on Linux) is written to the report as an escape instead of stopping the write.
 - The report files are now created exclusively, so a run never overwrites another run's report. A second run in the same second still gets `-2` added, as in 0.4.1, and a dangling link now counts as a taken name.
-- The error for a failed report write picks its advice by cause: a full disk or an I/O error gets "check that the disk has room", a path or permission problem gets "give --out a folder you can write to", and any other error gets a short "check the folder and the disk" text.
-- A report write that fails part-way now stops with exit code 2 and one error that names the folder or file and the fix. It retries nothing and removes nothing: when the run has already created report files, the error names them and says to delete them, because the report is incomplete.
-- When another run or program makes a report file of the same name while this run is writing, the run stops with exit code 2, names that file, and says to run again or give `--out` another folder. The other file is left alone.
-- A report write that stops on an error that isn't a file error (such as data that can't be written as JSON) now exits with code 2 and a one-line error that says to rerun with `--log FILE` (a `.txt` file outside the input folder) and attach that log to a bug report, instead of a Python traceback with exit code 1. When the run already has a `--log` file, the error names that file instead.
+- A report that can't be written now stops with exit code 2 and one error that names the folder or file and the fix. In 0.4.1 every write error blamed the `--out` path. The advice now follows the cause:
+  - a full disk or an I/O error says to check that the disk has room and is still connected;
+  - a path or permission problem says to give `--out` a folder you can write to;
+  - a `.json` name that can't be created right after its `.txt` was written says another program may be holding that name;
+  - a report file of the same name made by another run or program meanwhile is named, with the advice to run again or give `--out` another folder;
+  - an error that isn't a file error (a bug) says to rerun with `--log FILE` (a `.txt` file outside the input folder) and attach that log to a bug report, or names the run's own `--log` file;
+  - any other error says to check the folder and the disk.
+- A failed report write retries nothing and removes nothing. When the run has already created report files, the error names them and says to delete them, because that report is incomplete.
 - The README and AGENTS.md now say that a failed write exits 2 and that a script should trust a report pair only from a run that exited 0 or 1.
 
 ### Internal

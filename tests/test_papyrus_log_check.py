@@ -1349,7 +1349,7 @@ class TestReviewRound1042(Base):
             self.assertEqual(console.errors, "strict")
         self.assertEqual(cm.exception.code, 2)
         console.flush()
-        self.assertIn(b"??", raw.getvalue())
+        self.assertIn(b"\\u540d\\u524d", raw.getvalue())  # stderr shows escapes (round S1), not ??
 
 
 class TestReviewRound2042(Base):
@@ -1407,7 +1407,7 @@ class TestReviewRound2042(Base):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
         self.assertIn("Give --out a folder you can write to", err)
-        self.assertNotIn("The folder is fine as a path", err)
+        self.assertNotIn("fine as a path", err)
 
     def test_the_environment_variable_error_is_one_clear_sentence(self):
         gone = os.path.join(self.dir, "gone")
@@ -1656,7 +1656,9 @@ class TestSimpleWrite042(Base):
         self.assertEqual(len(refused), 1, "the name was retried")
         txt = refused[0][:-len(".json")] + ".txt"
         self.assertEqual(os.listdir(self.out), [os.path.basename(txt)], "the text report was removed")
-        self.assertIn("Give --out a folder you can write to", err)
+        self.assertIn(f"Can't create {refused[0]} (Permission denied), though this run has just written in the "
+                      f"same folder.", err)
+        self.assertNotIn("Give --out a folder you can write to", err)
         self.assertIn(f"This run's report is incomplete, so delete what it wrote: {txt}.", err)
 
     def test_a_run_never_removes_a_report_file(self):
@@ -1748,6 +1750,141 @@ class TestSimpleWrite042(Base):
         self.assertEqual(code, 2)
         self.assertIn(f"please report it at {plc.URL}/issues with the log file {os.path.abspath(log)} attached.", err)
         self.assertNotIn("run it again with --log", err)
+
+
+class TestReviewS1042(Base):
+    """0.4.2 /code-review round S1: stderr keeps non-ASCII paths exact, unreadable folders and zip entries get an error
+    with the fix, --mods on a missing --root blames --root, odd names don't stop the report write, and the I/O text
+    doesn't claim the path is fine."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def test_stderr_shows_a_non_ascii_path_as_escapes_not_question_marks(self):
+        import contextlib
+        import io
+        z, _ = self.zip_and_rules()
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+        with contextlib.redirect_stderr(console):
+            code = plc.main([z, "--root", os.path.join(self.dir, "名前"), "--out", self.out])
+        console.flush()
+        self.assertEqual(code, 2)
+        self.assertIn(b"\\u540d\\u524d", raw.getvalue())
+        self.assertNotIn(b"??", raw.getvalue())
+
+    def test_mods_on_a_missing_root_blames_the_root(self):
+        z, _ = self.zip_and_rules()
+        code, err = self.run_main([z, "--root", os.path.join(self.dir, "typo"), "--mods", "TestMod", "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("is not a folder, so --mods can't find the project folders in it", err)
+        self.assertNotIn("There is no rule file", err)
+
+    def test_an_unreadable_root_names_the_option_and_the_fix(self):
+        import errno
+        from unittest import mock
+        z, _ = self.zip_and_rules()
+        real = os.listdir
+
+        def fake(p):
+            if os.path.normcase(os.path.abspath(p)) == os.path.normcase(os.path.abspath(self.root)):
+                raise PermissionError(errno.EACCES, "Access is denied")
+            return real(p)
+        with mock.patch.object(plc.os, "listdir", fake):
+            code, err = self.run_main([z, "--root", self.root, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn(f"Can't read the --root folder {self.root} (Access is denied). Give --root a folder you can read",
+                      err)
+
+    def test_an_unreadable_logs_dir_names_the_option_and_the_fix(self):
+        import errno
+        from unittest import mock
+        _, rules = self.zip_and_rules()
+        with mock.patch.object(plc.os, "listdir", side_effect=PermissionError(errno.EACCES, "Access is denied")):
+            code, err = self.run_main(["--logs-dir", self.dir, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn(f"Can't read the --logs-dir folder {self.dir} (Access is denied).", err)
+
+    def test_a_key_error_is_reported_as_a_bug(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc, "run", side_effect=KeyError("oops")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("internal error (KeyError: 'oops'). This is a bug in papyrus-log-check", err)
+
+    def patched_zip(self, method=None, corrupt=False):
+        """A log zip whose Papyrus.0.log entry has another compression method number, or damaged deflate data."""
+        path = os.path.join(self.dir, "bad.zip")
+        text = LOG0 * 200
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("manifest.json", json.dumps(MANIFEST))
+            z.writestr("Logs/Script/Papyrus.0.log", text,
+                       compress_type=zipfile.ZIP_DEFLATED if corrupt else zipfile.ZIP_STORED)
+        data = bytearray(open(path, "rb").read())
+        local = data.find(b"PK\x03\x04", data.find(b"PK\x03\x04") + 4)  # the second entry's local header
+        central = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+        if method is not None:
+            data[local + 8:local + 10] = method.to_bytes(2, "little")
+            data[central + 10:central + 12] = method.to_bytes(2, "little")
+        if corrupt:
+            start = local + 30 + len("Logs/Script/Papyrus.0.log")
+            for i in range(start + 2, start + 40):
+                data[i] ^= 0x5A
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def test_an_unsupported_compression_method_exits_2_with_the_fix(self):
+        _, rules = self.zip_and_rules()
+        code, err = self.run_main([self.patched_zip(method=9), "--rules", rules, "--out", self.out])  # 9 = Deflate64
+        self.assertEqual(code, 2)
+        self.assertIn("can't read Logs/Script/Papyrus.0.log in the zip (NotImplementedError", err)
+        self.assertIn("make the zip again", err)
+
+    def test_damaged_zip_data_exits_2_with_the_fix(self):
+        _, rules = self.zip_and_rules()
+        code, err = self.run_main([self.patched_zip(corrupt=True), "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("can't read Logs/Script/Papyrus.0.log in the zip", err)
+        self.assertIn("make the zip again", err)
+
+    def test_a_damaged_manifest_entry_stops_the_run_instead_of_being_ignored(self):
+        import zlib
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real = zipfile.ZipFile.read
+
+        def fake(zf, name, *a, **k):
+            if name == "manifest.json":
+                raise zlib.error("invalid stored block lengths")
+            return real(zf, name, *a, **k)
+        with mock.patch.object(zipfile.ZipFile, "read", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("can't read manifest.json in the zip (error: invalid stored block lengths)", err)
+
+    def test_a_name_that_is_not_valid_unicode_is_written_as_an_escape(self):
+        z, _ = self.zip_and_rules()
+        rules = os.path.join(self.dir, "surrogate.json")
+        with open(rules, "w", encoding="utf-8") as f:
+            f.write(json.dumps(dict(RULES, mod="Bad\ud800Mod")))  # ensure_ascii: the file holds the \ud800 escape
+        code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1), err)
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 2)
+        with open(os.path.join(self.out, names[1]), encoding="utf-8") as f:
+            self.assertIn("Bad\\ud800Mod", f.read())
+
+    def test_an_io_error_does_not_say_the_path_is_fine(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.EIO, "Input/output error")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Check that the disk has room and is still connected", err)
+        self.assertNotIn("fine as a path", err)
 
 
 class TestDocsVersion(unittest.TestCase):
