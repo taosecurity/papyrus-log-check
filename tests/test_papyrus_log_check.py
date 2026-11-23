@@ -1293,7 +1293,7 @@ class TestBadInput042(Base):
             code = plc.main([z, "--rules", rules, "--out", self.out])
         console.flush()
         self.assertIn(code, (0, 1))
-        self.assertIn(b"Mod ??", raw.getvalue())
+        self.assertIn(b"Mod \\u540d\\u524d", raw.getvalue())  # round S2: an escape on stdout too, not ??
 
     def test_a_rule_file_that_is_not_utf8_says_so(self):
         z, _ = self.zip_and_rules()
@@ -1885,6 +1885,122 @@ class TestReviewS1042(Base):
         self.assertEqual(code, 2)
         self.assertIn("Check that the disk has room and is still connected", err)
         self.assertNotIn("fine as a path", err)
+
+
+class TestReviewS2042(Base):
+    """0.4.2 /code-review round S2: odd names don't stop a --log run or a folder input, every unreadable zip entry and
+    folder log file gets the fix, the KeyError text names the run's own log, the held-name text is only for a refused
+    or busy .json, and the report paths on stdout stay exact."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+    refusing_open = TestSimpleWrite042.refusing_open
+
+    def surrogate_rules(self):
+        rules = os.path.join(self.dir, "surrogate.json")
+        with open(rules, "w", encoding="utf-8") as f:
+            f.write(json.dumps(dict(RULES, mod="Bad\ud800Mod")))
+        return rules
+
+    def test_a_name_that_is_not_valid_unicode_does_not_stop_a_log_run(self):
+        z, _ = self.zip_and_rules()
+        log = os.path.join(self.dir, "run.log.txt")
+        code, err = self.run_main([z, "--rules", self.surrogate_rules(), "--out", self.out, "--log", log])
+        self.assertIn(code, (0, 1), err)
+        self.assertEqual(len(os.listdir(self.out)), 2)
+        with open(log, encoding="utf-8") as f:
+            self.assertIn("Bad\\ud800Mod", f.read())
+
+    def test_a_folder_whose_name_is_not_valid_unicode_can_be_checked(self):
+        _, rules = self.zip_and_rules()
+        name = "caf\ud800" if os.name == "nt" else "caf\udce9"  # a lone surrogate on Windows, Latin-1 bytes on Linux
+        try:
+            folder = make_folder(os.path.join(self.dir, "logs", name))
+        except (OSError, UnicodeError):
+            self.skipTest("this file system refuses the name")
+        code, err = self.run_main([os.path.join(self.dir, "logs"), "--rules", rules, "--out", self.out])
+        self.assertIn(code, (0, 1), err)
+        self.assertTrue(os.path.isdir(folder))
+
+    def check_zip_read_error(self, exc):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real = zipfile.ZipFile.read
+
+        def fake(zf, name, *a, **k):
+            if name.endswith("Papyrus.0.log"):
+                raise exc
+            return real(zf, name, *a, **k)
+        with mock.patch.object(zipfile.ZipFile, "read", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("in the zip (", err)
+        self.assertIn("make the zip again", err)
+
+    def test_damaged_lzma_data_exits_2_with_the_fix(self):
+        import lzma
+        self.check_zip_read_error(lzma.LZMAError("Corrupt input data"))
+
+    def test_damaged_bzip2_data_exits_2_with_the_fix(self):
+        self.check_zip_read_error(OSError("Invalid data stream"))
+
+    def test_an_unreadable_log_in_a_folder_names_it_and_the_fix(self):
+        import builtins
+        import errno
+        from unittest import mock
+        _, rules = self.zip_and_rules()
+        folder = make_folder(os.path.join(self.dir, "logs"))
+        real_open = builtins.open
+
+        def fake(path, *a, **k):
+            if str(path).endswith("Papyrus.0.log") and (a[:1] or [k.get("mode")])[0] == "rb":
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", fake):
+            code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Papyrus.0.log (Permission denied). Close the program that holds it", err)
+        self.assertIn("copy the logs to another folder", err)
+
+    def test_a_key_error_names_the_runs_own_log(self):
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        log = os.path.join(self.dir, "run.log.txt")
+        with mock.patch.object(plc, "run", side_effect=KeyError("oops")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out, "--log", log])
+        self.assertEqual(code, 2)
+        self.assertIn(f"with the log file {log} attached", err)
+        self.assertNotIn("run it again with --log", err)
+
+    def test_a_json_name_too_long_gets_the_path_text_not_the_held_text(self):
+        import builtins
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        real_open = builtins.open
+
+        def fake(path, *a, **k):
+            if str(path).endswith(".json") and "logcheck-" in str(path) and (a[:1] or [k.get("mode")])[0] == "x":
+                raise OSError(errno.ENAMETOOLONG, "File name too long")
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertNotIn("Another program", err)
+        self.assertIn("Give --out a folder you can write to", err)
+
+    def test_the_report_paths_on_stdout_keep_a_name_the_console_cannot_show(self):
+        import contextlib
+        import io
+        z, rules = self.zip_and_rules()
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+        with contextlib.redirect_stdout(console):
+            code = plc.main([z, "--rules", rules, "--out", os.path.join(self.out, "名前")])
+        console.flush()
+        self.assertIn(code, (0, 1))
+        self.assertIn(b"\\u540d\\u524d", raw.getvalue())
+        self.assertNotIn(b"??", raw.getvalue())
 
 
 class TestDocsVersion(unittest.TestCase):

@@ -22,15 +22,16 @@ This is a fix release with no new features. The install text and sample outputs 
 - `--mods` with project names and a `--root` that doesn't exist now says that `--root` is wrong. Before, it said the mod's rule file was missing.
 - A folder that comes from the environment variable `PAPYRUS_LOG_CHECK_LOGS` is named as such in its error, not blamed on `--logs-dir`.
 - A rule file that isn't UTF-8 (for example a UTF-16 file saved by Notepad) now gets an error that says so and tells you to save it as UTF-8. Before, the error blamed commas.
-- A zip whose entries are damaged, cut short, encrypted or made with a compression method Python can't read (such as Deflate64 from Windows Explorer) now exits with code 2 and an error that names the entry and says to make the zip again. Before, it ended in a Python traceback with exit code 1, and a damaged manifest.json was silently ignored.
+- A zip whose entries are damaged, cut short, encrypted or made with a compression method Python can't read (such as Deflate64 from Windows Explorer) now exits with code 2 and an error that names the entry and says to make the zip again. This covers Deflate, LZMA and BZIP2 entries. Before, it ended in a Python traceback with exit code 1, and a damaged manifest.json was silently ignored.
+- A log file in an input folder that can't be read (held by the game, or a OneDrive file that isn't on this device) now gets an error that names it and says to close the program that holds it or to copy the logs. Before, it got a raw Windows error.
 - The log zip is now closed when a run ends, including a run that stops on an error, so the file isn't left locked on Windows.
-- A character that the console's code page can't show no longer stops the run. On stdout it prints as `?`, and in errors on stderr as a `\uXXXX` escape, so an error still names its file exactly. This also covers the usage text for a bad option. The report and the JSON keep the real name, and the console's old setting comes back when the run ends.
-- A name that isn't valid Unicode (such as a non-UTF-8 file name on Linux) is written to the report as an escape instead of stopping the write.
+- A character that the console's code page can't show no longer stops the run. On stdout and stderr it prints as a `\uXXXX` escape, so the `Report:` and `JSON:` lines and every error still name their file exactly (run `python -X utf8 ...` to get every character as it is). This also covers the usage text for a bad option. The report and the JSON keep the real name, and the console's old setting comes back when the run ends.
+- A name that isn't valid Unicode (such as a non-UTF-8 file name on Linux) is written to the report and to the `--log` file as an escape instead of stopping the run, and a log folder with such a name can be checked.
 - The report files are now created exclusively, so a run never overwrites another run's report. A second run in the same second still gets `-2` added, as in 0.4.1, and a dangling link now counts as a taken name.
 - A report that can't be written now stops with exit code 2 and one error that names the folder or file and the fix. In 0.4.1 every write error blamed the `--out` path. The advice now follows the cause:
   - a full disk or an I/O error says to check that the disk has room and is still connected;
   - a path or permission problem says to give `--out` a folder you can write to;
-  - a `.json` name that can't be created right after its `.txt` was written says another program may be holding that name;
+  - a `.json` name that is refused or busy right after its `.txt` was written says another program may be holding that name;
   - a report file of the same name made by another run or program meanwhile is named, with the advice to run again or give `--out` another folder;
   - an error that isn't a file error (a bug) says to rerun with `--log FILE` (a `.txt` file outside the input folder) and attach that log to a bug report, or names the run's own `--log` file;
   - any other error says to check the folder and the disk.

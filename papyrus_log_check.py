@@ -122,7 +122,8 @@ class Log:
         folder = os.path.dirname(full)
         if not os.path.isdir(folder):
             raise ValueError(f"--log {path}: the folder {folder} doesn't exist. Make it, or give --log a path in a folder that exists.")
-        cls.file = open(full, "w", encoding="utf-8")
+        # backslashreplace, as for the report: a name that isn't valid Unicode is logged as an escape, not a crash
+        cls.file = open(full, "w", encoding="utf-8", errors="backslashreplace")
 
     @classmethod
     def close(cls):
@@ -226,15 +227,21 @@ class Package:
         if self.zf is not None:
             try:
                 return self.zf.read(key)
-            except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, RuntimeError) as e:
-                # a damaged or cut-short entry, a compression method Python can't read (Deflate64 from Windows
-                # Explorer for big zips) or an encrypted entry: exit 2 with the entry and the fix, not a traceback
+            except Exception as e:
+                # any entry Python can't read (damaged or cut-short Deflate, LZMA or BZIP2 data, a compression method
+                # Python can't read such as Deflate64 from Windows Explorer for big zips, an encrypted entry): exit 2
+                # with the entry and the fix, not a traceback
                 raise ValueError(f"{self.name}: can't read {key} in the zip ({type(e).__name__}: {e}). The zip is "
                                  f"damaged or uses a format Python can't read: make the zip again (the log collector, "
                                  f"or 7-Zip with the Deflate method and no password), or give the log folder "
                                  f"instead.") from e
-        with open(key, "rb") as f:
-            return f.read()
+        try:
+            with open(key, "rb") as f:
+                return f.read()
+        except OSError as e:
+            raise ValueError(f"Can't read {key} ({e.strerror or e}). Close the program that holds it (the game, or a "
+                             f"sync client such as OneDrive: make the file available on this device), or copy the "
+                             f"logs to another folder and check that copy.") from e
 
     def has(self, norm_lower):
         return norm_lower in self.entries
@@ -263,7 +270,9 @@ class Package:
         want = {n.lower() for n in extra_names}
         used += [k for k in self.entries if os.path.basename(k) in want]
         for key in sorted(set(used)):
-            h.update(self.entries[key][1].encode("utf-8") + b"\0")
+            # surrogatepass: a folder name that isn't valid UTF-8 (Linux) or holds a lone surrogate (Windows) still
+            # hashes; every valid name gives the same bytes as plain UTF-8
+            h.update(self.entries[key][1].encode("utf-8", "surrogatepass") + b"\0")
             h.update(self._raw(self.entries[key][0]))
         return h.hexdigest()
 
@@ -1045,6 +1054,17 @@ def newest_zip(folder, *, from_env=False):
 _DISK_ERRNOS = frozenset((errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO))
 _PATH_ERRNOS = frozenset(getattr(errno, name) for name in (
     "ENOENT", "ENOTDIR", "EISDIR", "EINVAL", "EACCES", "EPERM", "EBUSY", "EROFS", "ENAMETOOLONG", "ELOOP", "EEXIST"))
+# the errors another program holding one name gives; any other path error on the .json alone (a name one character
+# too long, for example) gets the plain path text
+_HELD_ERRNOS = frozenset((errno.EACCES, errno.EPERM, errno.EBUSY))
+
+
+def _bug_ask():
+    """What a bug message asks the user to do: attach this run's --log file, or rerun with --log to make one."""
+    if Log.file is not None:
+        return f"please report it at {URL}/issues with the log file {Log.file.name} attached."
+    return (f"please run it again with --log FILE (a .txt file outside the input folder) and report it at "
+            f"{URL}/issues with that log file attached.")
 
 
 def run(args):
@@ -1205,18 +1225,13 @@ def _run(args, opened):
             raise ValueError(f"Can't write the report: {path} was made by another run or program while this run was "
                              f"writing its report. Run again, or give --out another folder.{saved}") from e
         if not isinstance(e, OSError):
-            if Log.file is not None:  # this run already has a log: point at it instead of asking for a rerun
-                ask = f"please report it at {URL}/issues with the log file {Log.file.name} attached."
-            else:
-                ask = (f"please run it again with --log FILE (a .txt file outside the input folder) and report it at "
-                       f"{URL}/issues with that log file attached.")
             raise ValueError(f"Can't write the report in {out_dir} ({type(e).__name__}: {e}). This is a bug in "
-                             f"{TOOL}: {ask}{saved}") from e
+                             f"{TOOL}: {_bug_ask()}{saved}") from e
         why = e.strerror or e
         if e.errno in _DISK_ERRNOS:
             raise ValueError(f"Can't write the report in {out_dir} ({why}). Check that the disk has room and is still "
                              f"connected, or give --out another folder.{saved}")
-        if e.errno in _PATH_ERRNOS and created and path not in created:
+        if e.errno in _HELD_ERRNOS and created and path not in created:
             # the .txt is written and the .json couldn't be opened, so the folder is usable: that one name is the problem
             raise ValueError(f"Can't create {path} ({why}), though this run has just written in the same folder. "
                              f"Another program (antivirus or a sync client such as OneDrive) may be holding that "
@@ -1256,13 +1271,13 @@ class _VersionAction(argparse.Action):
 
 def main(argv=None):
     """Runs the tool. 0.4.2: for the whole call, a character the console's code page can't show no longer stops the
-    run (argparse's own usage and error text included): on stdout it prints as ?, and on stderr as a \\uXXXX escape
-    (Python's own default there), so an error still names its file exactly. The streams' old error mode comes back after."""
+    run (argparse's own usage and error text included): on stdout and stderr it prints as a \\uXXXX escape, so the
+    Report: and JSON: lines and every error still name their file exactly. The streams' old error mode comes back after."""
     saved = []
-    for stream, mode in ((sys.stdout, "replace"), (sys.stderr, "backslashreplace")):
+    for stream in (sys.stdout, sys.stderr):
         try:
             old = stream.errors
-            stream.reconfigure(errors=mode)
+            stream.reconfigure(errors="backslashreplace")
             saved.append((stream, old))
         except (AttributeError, ValueError):
             pass
@@ -1323,9 +1338,8 @@ def _main(argv):
         return run(args)
     except (OSError, ValueError, zipfile.BadZipFile, KeyError) as e:
         if isinstance(e, KeyError):  # no code raises KeyError on purpose, so one is a bug, not a bad input
-            print(f"{TOOL}: internal error (KeyError: {safe(e)}). This is a bug in {TOOL}: please run it again with "
-                  f"--log FILE (a .txt file outside the input folder) and report it at {URL}/issues with that log "
-                  f"file attached.", file=sys.stderr)
+            print(f"{TOOL}: internal error (KeyError: {safe(e)}). This is a bug in {TOOL}: {safe(_bug_ask())}",
+                  file=sys.stderr)
         else:
             print(f"{TOOL}: {safe(e)}", file=sys.stderr)
         Log.write("stopped:\n" + traceback.format_exc())
