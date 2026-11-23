@@ -2025,13 +2025,18 @@ class TestReviewS3042(Base):
         from unittest import mock
         _, rules = self.zip_and_rules()
         folder = make_folder(os.path.join(self.dir, "logs"))
-        with mock.patch("builtins.open", self.fake_open_raising(FileNotFoundError(errno.ENOENT, "No such file"))):
-            code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
-        self.assertIn("Papyrus.0.log: it is gone", err)
-        self.assertIn("Run the check again", err)
-        self.assertIn("too long for Windows", err)  # round S4: a long OneDrive path fails the same way every run
-        self.assertNotIn("Close the program", err)
+        for windows in (True, False):
+            with mock.patch.object(plc, "_WINDOWS", windows), \
+                    mock.patch("builtins.open", self.fake_open_raising(FileNotFoundError(errno.ENOENT, "No such file"))):
+                code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
+            self.assertEqual(code, 2)
+            self.assertIn("Papyrus.0.log: it is gone", err)
+            self.assertIn("Run the check again", err)
+            self.assertNotIn("Close the program", err)
+            if windows:
+                self.assertIn("too long for Windows", err)  # round S4: a long OneDrive path fails the same way every run
+            else:
+                self.assertNotIn("Windows", err)  # round S5: no Windows path advice on Linux or macOS
 
     def zip_read_raising(self, exc):
         from unittest import mock
@@ -2058,6 +2063,7 @@ class TestReviewS3042(Base):
         self.assertEqual(code, 2)  # round S4: exit 2 with one line, not a traceback with exit 1
         self.assertIn("not enough memory to read", err)
         self.assertNotIn("make the zip again", err)
+        self.assertNotIn("log folder", err)  # round S5: a folder is read the same way, so it isn't a fix
 
     def test_a_subfolder_that_cannot_be_listed_is_named(self):
         import errno
@@ -2092,8 +2098,12 @@ class TestReviewS3042(Base):
             return real(path)
         with mock.patch("os.scandir", fake):
             code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
-        self.assertIn(code, (0, 1), err)  # round S4: 0.4.1 checked the real logs; user logs are never checked
+            pkg = plc.Package(folder)
+        self.assertEqual(code, 1, err)  # these rules find a problem in the real logs; round S4: 0.4.1 checked the real logs; user logs are never checked
         self.assertNotIn("Can't read the folder", err)
+        # round S5: only the User folder is skipped; both real logs and plugins.txt are still read
+        self.assertEqual([l["name"] for l in pkg.logs], ["Papyrus.1.log", "Papyrus.0.log"])
+        self.assertIsNotNone(pkg.plugins)
 
     def test_a_case_clash_names_each_file_once(self):
         pkg = plc.Package(make_zip(self.dir))

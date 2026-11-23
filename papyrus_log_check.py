@@ -34,6 +34,8 @@ import re
 import sys
 import traceback
 import zipfile
+
+_WINDOWS = os.name == "nt"  # Windows-only advice (the 260-character path limit)
 import zlib
 
 TOOL = "papyrus-log-check"
@@ -255,7 +257,7 @@ class Package:
                 raise  # keys come from the zip's own list, so a KeyError is a bug (main() says so)
             except MemoryError as e:
                 raise ValueError(f"{self.name}: not enough memory to read {key} in the zip. Close other programs and "
-                                 f"run the check again, or unzip it and give the log folder instead.") from e
+                                 f"run the check again.") from e
             except Exception as e:
                 # any entry Python can't read (damaged or cut-short Deflate, LZMA or BZIP2 data, a compression method
                 # Python can't read such as Deflate64 from Windows Explorer for big zips, an encrypted entry, a drive
@@ -268,10 +270,10 @@ class Package:
             with open(key, "rb") as f:
                 return f.read()
         except FileNotFoundError as e:
+            long_path = (", or its path is too long for Windows (over 260 characters)" if _WINDOWS else "")
             raise ValueError(f"Can't read {key}: it is gone (renamed or deleted while the check ran, for example by "
-                             f"the game starting, or a broken link), or its path is too long for Windows (over 260 "
-                             f"characters). Run the check again; if it fails the same way, copy the logs to a short "
-                             f"folder path and check that copy.") from e
+                             f"the game starting, or a broken link){long_path}. Run the check again; if it fails the "
+                             f"same way, copy the logs to a short folder path and check that copy.") from e
         except OSError as e:
             raise ValueError(f"Can't read {key} ({e.strerror or e}). Close the program that holds it (the game, or a "
                              f"sync client such as OneDrive: make the file available on this device), or copy the "
