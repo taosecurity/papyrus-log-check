@@ -1821,7 +1821,8 @@ class TestReviewS1042(Base):
             z.writestr("manifest.json", json.dumps(MANIFEST))
             z.writestr("Logs/Script/Papyrus.0.log", text,
                        compress_type=zipfile.ZIP_DEFLATED if corrupt else zipfile.ZIP_STORED)
-        data = bytearray(open(path, "rb").read())
+        with open(path, "rb") as f:
+            data = bytearray(f.read())
         local = data.find(b"PK\x03\x04", data.find(b"PK\x03\x04") + 4)  # the second entry's local header
         central = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
         if method is not None:
