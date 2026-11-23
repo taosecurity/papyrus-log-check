@@ -1171,6 +1171,17 @@ class TestListings041Review(Base):
         pkg = self.package({"tool": "x"}, ["stray\\Other.dll"])   # no listing at all: the .dll files count (0.4.0)
         self.assertEqual(pkg.sfse_dlls(), {"other.dll"})
 
+    # round 4
+    def test_null_or_missing_listing_values_never_fall_back_to_stray_dlls(self):
+        for listing in ({"sfsePluginDlls": None}, None, {}, {"dataPlugins": [{"name": "Starfield.esm"}]},
+                        {"dataPlugins": "oops"}, {"sfsePluginDlls": ["Data/SFSE/Plugins/..", "."]}):
+            with self.subTest(listing=listing):
+                pkg = self.package(dict(MANIFEST, listing=listing), ["stray\\Other.dll"])
+                self.assertIsNone(pkg.sfse_dlls())
+        pkg = self.package(dict(MANIFEST, listing={"dataPlugins": None, "sfsePluginDlls": ["A.dll"]}))
+        self.assertIsNone(pkg.data_plugins())
+        self.assertEqual(pkg.sfse_dlls(), {"a.dll"})
+
     def test_a_data_listing_without_starfield_esm_is_ignored(self):
         _, res = self.check_manifest(dict(RULES, plugins=["ShatteredSpace.esm"]), {"dataPlugins": ["Some.esp"]})
         self.assertEqual(res["plugin_state"], "active")

@@ -153,8 +153,10 @@ def clean_manifest(m):
     if listing:
         listing = dict(listing)
         for key in ("sfsePluginDlls", "dataPlugins"):
-            v = listing.get(key)
-            if v is not None and v is not IGNORED and not isinstance(v, list):
+            if key not in listing:
+                continue
+            v = listing[key]
+            if v is not IGNORED and not isinstance(v, list):   # null too: the key was there, so it isn't "no listing"
                 Log.write(f"manifest.json: listing.{key} should be a list; ignored")
                 listing[key] = IGNORED
         out["listing"] = listing
@@ -334,10 +336,15 @@ class Package:
         """0.4.1: (present, names) for the manifest's listing.<key>, whose entries are {"name": ...} objects or
         plain strings (a path is cut to its file name). present is False when there is no listing; names is None
         when there is none, when the collector didn't find the game folder (an empty gamePath, so its empty lists
-        say nothing) or when no entry has a usable name. Each reason is logged once."""
-        listing = self.manifest.get("listing", {}).get(key)
-        if listing is None:
+        say nothing), when the manifest's listing lacks this key (round 4: a listing was there, so stray files in
+        the input don't stand in for it) or when no entry has a usable name. Each reason is logged once."""
+        whole = self.manifest.get("listing")
+        if not isinstance(whole, dict):
             return False, None
+        if key not in whole:
+            self._log_once(key, f"manifest.json: listing has no {key}; ignored")
+            return True, None
+        listing = whole[key]
         if listing is IGNORED:
             return True, None
         if not listing and "gamePath" in self.manifest and not self.manifest.get("gamePath"):
@@ -348,7 +355,7 @@ class Package:
             name = d.get("name") if isinstance(d, dict) else d
             if isinstance(name, str):
                 base = os.path.basename(name.strip().replace("\\", "/")).strip().lower()
-                if base:
+                if base and base not in (".", ".."):
                     names.add(base)
         if listing and not names:
             self._log_once(key, f"manifest.json: listing.{key} has no entry with a name; ignored")
