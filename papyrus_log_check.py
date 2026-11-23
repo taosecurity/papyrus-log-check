@@ -1020,24 +1020,6 @@ def newest_zip(folder, *, from_env=False):
 _DISK_ERRNOS = frozenset((errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO))
 _PATH_ERRNOS = frozenset(getattr(errno, name) for name in (
     "ENOENT", "ENOTDIR", "EISDIR", "EINVAL", "EACCES", "EPERM", "EBUSY", "EROFS", "ENAMETOOLONG", "ELOOP", "EEXIST"))
-_NAME_TRIES = 100  # report names tried per run (-2 ... -100) before giving up
-_REFUSED_TRIES = 3  # PermissionError on this many names means the folder itself refuses
-
-
-class _WriteStopped(ValueError):
-    """The report write stopped for a reason its message already explains in full (every name taken, or an unpaired
-    .txt that couldn't be removed); the write's error handler passes it on unchanged."""
-
-
-def _stop_if_names_refused(out_dir, created, e):
-    """At the refused-name limit: when this run already created a report file in out_dir, the folder is writable and
-    the names were refused because other runs were deleting files of those names, so say that instead of the
-    generic path text."""
-    if created:
-        raise _WriteStopped(f"Can't write the report in {out_dir}: {_REFUSED_TRIES} report names in a row were refused "
-                            f"({e.strerror or e}), although this run had just written a file there, so other runs or "
-                            f"programs are probably deleting reports in that folder. Wait for them to finish, then "
-                            f"run again, or give --out another folder.") from e
 
 
 def run(args):
@@ -1169,81 +1151,32 @@ def _run(args, opened):
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
     report = text_report(data, args.max_lines)
-    # 0.4.2: each file is created exclusively ("x"), so a run never truncates another run's report, and `f` holds
-    # only a file this run created. A failed write (any error, Ctrl+C too) closes and removes the file it was
-    # writing once open() has returned it (a Ctrl+C inside open() itself can leave an empty file, which is why the
-    # docs trust a pair only after exit 0 or 1); a report that was written completely is in `kept`, stays, and the
-    # error names it.
+    # 0.4.2 (simplified): the pair takes the first free name (-2, -3, ... for an earlier run in the same second), and
+    # each file is created exclusively ("x"), so a run never overwrites another run's report. Any failure stops the
+    # run with exit 2 and one error that names the file and the fix. Nothing is retried and nothing is removed: the
+    # error names every report file this run created, so the user can delete it.
     stem = base
-    kept = []
-    f = None
+    created = []  # report files this run created, in order (the last one may be cut short)
+    path = None   # the report file being opened or written
     try:
         os.makedirs(out_dir, exist_ok=True)
-        refused = 0
-        created = False  # this run has created a report file in out_dir, so the folder itself is writable
-        for tries in range(_NAME_TRIES):
-            # Two runs in one second: take the next free name pair (-2, -3, ...); lexists also sees a dangling link.
-            base = stem if tries == 0 else f"{stem}-{tries + 1}"
-            if os.path.lexists(base + ".txt") or os.path.lexists(base + ".json"):
-                continue
-            try:
-                f = open(base + ".txt", "x", encoding="utf-8")
-            except FileExistsError:  # another run took the name between the check and now
-                continue
-            except PermissionError as e:  # Windows: a name another run is deleting; a folder we can't write repeats it
-                refused += 1
-                if refused >= _REFUSED_TRIES:
-                    _stop_if_names_refused(out_dir, created, e)
-                    raise
-                continue
-            created = True
-            with f:
-                f.write(report)
-            kept.append(f.name)
-            try:
-                f = open(base + ".json", "x", encoding="utf-8")
-            except (FileExistsError, PermissionError) as e:
-                # Another run took the .json name (or, on Windows, is deleting a file of that name): drop our .txt
-                # and take the next free pair. A refused name counts toward the same limit as for the .txt.
-                f = None
-                try:
-                    os.remove(kept[-1])
-                except FileNotFoundError:  # already gone (removed by someone else): nothing to clean up
-                    pass
-                except OSError as rm:
-                    raise _WriteStopped(
-                        f"Can't write the report in {out_dir}: the name {os.path.basename(base)}.json was taken while "
-                        f"this run wrote its text report, and that unpaired text report couldn't be removed "
-                        f"({rm.strerror or rm}): {kept[-1]}. Delete that file, then run again.") from e
-                kept.pop()
-                if isinstance(e, PermissionError):
-                    refused += 1
-                    if refused >= _REFUSED_TRIES:
-                        _stop_if_names_refused(out_dir, created, e)
-                        raise
-                continue
-            with f:
-                json.dump(data, f, indent=1, ensure_ascii=False)
-            kept.append(f.name)
-            f = None
-            break
-        else:
-            raise _WriteStopped(f"Can't write the report in {out_dir}: the first {_NAME_TRIES} report names for this "
-                              f"run ({os.path.basename(stem)}...) are all taken. Move old reports out of the folder, "
-                              f"or give --out another folder.")
-    except BaseException as e:  # also a non-OSError (unserializable data, Ctrl+C) removes its half-written file
-        if f is not None and f.name not in kept:  # the file this run was writing
-            try:
-                f.close()
-            except OSError:
-                pass
-            try:
-                os.remove(f.name)
-            except OSError:
-                pass
-        saved = f" The text report was written in full and is kept: {kept[0]}." if kept else ""
-        if isinstance(e, _WriteStopped) or not isinstance(e, Exception):  # Ctrl+C and exit go on as they are
-            raise
+        n = 2
+        while os.path.lexists(base + ".txt") or os.path.lexists(base + ".json"):  # lexists also sees a dangling link
+            base = f"{stem}-{n}"
+            n += 1
+        for path in (base + ".txt", base + ".json"):
+            with open(path, "x", encoding="utf-8") as f:
+                created.append(path)
+                if path.endswith(".txt"):
+                    f.write(report)
+                else:
+                    json.dump(data, f, indent=1, ensure_ascii=False)
+    except Exception as e:  # Ctrl+C and exit go on as they are
+        saved = (f" This run's report is incomplete, so delete what it wrote: {', '.join(created)}."
+                 if created else "")
+        if isinstance(e, FileExistsError) and path is not None:
+            raise ValueError(f"Can't write the report: {path} was made by another run or program while this run was "
+                             f"writing its report. Run again, or give --out another folder.{saved}") from e
         if not isinstance(e, OSError):
             if Log.file is not None:  # this run already has a log: point at it instead of asking for a rerun
                 ask = f"please report it at {URL}/issues with the log file {Log.file.name} attached."

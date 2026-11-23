@@ -1463,31 +1463,33 @@ class TestReviewRound2042(Base):
             return f
         return fake
 
-    def test_a_failed_json_write_removes_the_json_and_keeps_the_complete_text_report(self):
+    def test_a_failed_json_write_names_both_files_to_delete(self):
+        # Simplified write path: nothing is removed; the error names every file this run created.
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()
         with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        names = os.listdir(self.out)
-        self.assertEqual([n for n in names if n.endswith(".json")], [])
-        self.assertEqual(len([n for n in names if n.endswith(".txt")]), 1)
-        self.assertIn("kept", err)
-        with open(os.path.join(self.out, names[0]), encoding="utf-8") as f:
-            self.assertIn("papyrus-log-check", f.read())
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 2, names)
+        files = ", ".join(os.path.join(self.out, n) for n in (names[1], names[0]))  # .txt first, then .json
+        self.assertIn("This run's report is incomplete, so delete what it wrote: " + files + ".", err)
 
-    def test_a_failed_text_write_removes_the_half_written_file(self):
+    def test_a_failed_text_write_names_the_text_file_to_delete(self):
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()
         with mock.patch("builtins.open", self.failing_open(".txt", errno.ENOSPC)):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        self.assertEqual(os.listdir(self.out), [])
-        self.assertNotIn("kept", err)
+        names = os.listdir(self.out)
+        self.assertEqual(len(names), 1, names)
+        self.assertTrue(names[0].endswith(".txt"))
+        self.assertIn("delete what it wrote: " + os.path.join(self.out, names[0]) + ".", err)
+        self.assertIn("disk has room", err)
 
-    def test_a_failed_open_never_removes_a_file_this_run_did_not_create(self):
+    def test_a_name_another_run_makes_first_stops_with_exit_2_and_is_left_alone(self):
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()
@@ -1507,13 +1509,16 @@ class TestReviewRound2042(Base):
             return real_open(path, *a, **k)
         with mock.patch("builtins.open", fake):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        # The run takes the next free name and succeeds; the other run's file is untouched.
-        self.assertIn(code, (0, 1))
+        # No retry: one clear error that names the file and the fix; the other run's file is untouched.
+        self.assertEqual(code, 2)
         self.assertEqual(len(taken), 1)
         with open(taken[0], encoding="utf-8") as f:
             self.assertEqual(f.read(), "other run")
-        self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.txt")]), 1)
-        self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.json")]), 1)
+        self.assertEqual(os.listdir(self.out), [os.path.basename(taken[0])])
+        self.assertIn(f"Can't write the report: {taken[0]} was made by another run or program while this run was "
+                      f"writing its report. Run again, or give --out another folder.", err)
+        self.assertNotIn("delete what it wrote", err)
+        self.assertNotIn("Traceback", err)
 
     def test_a_name_taken_by_a_dangling_link_is_skipped(self):
         from unittest import mock
@@ -1532,7 +1537,7 @@ class TestReviewRound2042(Base):
         self.assertIn(code, (0, 1))
         self.assertEqual(len([n for n in os.listdir(self.out) if n.endswith("-2.txt")]), 1)
 
-    def test_a_non_os_error_while_writing_the_json_exits_2_with_one_line_and_keeps_the_text(self):
+    def test_a_non_os_error_while_writing_the_json_exits_2_with_one_line_and_names_the_files(self):
         # Round 7: a non-OSError used to escape main() as a traceback with exit 1 (the FAIL code).
         from unittest import mock
         z, rules = self.zip_and_rules()
@@ -1542,14 +1547,13 @@ class TestReviewRound2042(Base):
         self.assertNotIn("Traceback", err)
         self.assertIn("TypeError: not serializable", err)
         self.assertIn("This is a bug in papyrus-log-check", err)
-        names = os.listdir(self.out)
-        self.assertEqual([n for n in names if n.endswith(".json")], [])
-        txt = [n for n in names if n.endswith(".txt")]
-        self.assertEqual(len(txt), 1)
-        self.assertIn("The text report was written in full and is kept: " + os.path.join(self.out, txt[0]), err)
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 2, names)
+        self.assertIn("delete what it wrote: " + os.path.join(self.out, names[1]) + ", "
+                      + os.path.join(self.out, names[0]) + ".", err)
 
-    def test_a_json_name_taken_by_another_run_moves_the_pair_to_the_next_name(self):
-        # Round 7: this used to stop with exit 2 and leave an unpaired .txt behind.
+    def test_a_json_name_taken_by_another_run_stops_and_names_the_text_report(self):
+        # Simplified write path: no move to the next name and no removal; the error names both files.
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()
@@ -1564,13 +1568,11 @@ class TestReviewRound2042(Base):
             return real_open(path, *a, **k)
         with mock.patch('builtins.open', fake):
             code, err = self.run_main([z, '--rules', rules, '--out', self.out])
-        self.assertIn(code, (0, 1), err)
-        names = sorted(os.listdir(self.out))
-        self.assertEqual(len(names), 2, names)
-        self.assertTrue(names[0].endswith('-2.json') and names[1].endswith('-2.txt'), names)
-        self.assertFalse(os.path.lexists(taken[0][:-len('.json')] + '.txt'), "the unpaired .txt was left behind")
-        with open(os.path.join(self.out, names[1]), encoding='utf-8') as f:
-            self.assertIn('papyrus-log-check', f.read())
+        self.assertEqual(code, 2)
+        txt = taken[0][:-len('.json')] + '.txt'
+        self.assertEqual(os.listdir(self.out), [os.path.basename(txt)])
+        self.assertIn(f"Can't write the report: {taken[0]} was made by another run or program", err)
+        self.assertIn(f"delete what it wrote: {txt}.", err)
 
     def test_a_resource_error_gets_neither_the_disk_text_nor_the_path_text(self):
         import errno
@@ -1608,55 +1610,16 @@ class TestReviewRound2042(Base):
         self.assertIn("disk has room", err)
 
 
-class TestReviewRound7042(Base):
-    """0.4.2 /code-review round 7: Ctrl+C right after a report file is opened removes it and closes it, a refused
-    name on Windows is retried, the name search is bounded, and a real dangling link counts as a taken name."""
+class TestSimpleWrite042(Base):
+    """0.4.2 simplified report write (step 18, replacing the round 6 to 9 retry and cleanup code): a refused name stops
+    with exit 2 and the path text, nothing is retried or removed, an earlier pair in the same second still moves the
+    run to the next name, and the bug-report text says how to make the log to attach."""
 
     run_main = TestBadInput042.run_main
     zip_and_rules = TestBadInput042.zip_and_rules
 
-    def test_ctrl_c_before_the_first_write_removes_and_closes_the_file(self):
-        # Round 6 code set its "half-written" marker inside the with block, so an interrupt on entering it left the
-        # empty file behind with its handle open.
-        import builtins
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        real_open = builtins.open
-        handles = []
-
-        class Interrupting:
-            def __init__(self, f):
-                self._f = f
-                self.name = f.name
-
-            @property
-            def closed(self):
-                return self._f.closed
-
-            def close(self):
-                self._f.close()
-
-            def __enter__(self):
-                raise KeyboardInterrupt()
-
-            def __exit__(self, *exc):
-                self._f.close()
-
-        def fake(path, *a, **k):
-            f = real_open(path, *a, **k)
-            if str(path).endswith(".txt") and "logcheck-" in str(path):
-                handles.append(f)
-                return Interrupting(f)
-            return f
-        with mock.patch("builtins.open", fake):
-            with self.assertRaises(KeyboardInterrupt):
-                self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertEqual(len(handles), 1)
-        self.assertTrue(handles[0].closed, "the report file was left open")
-        self.assertEqual(os.listdir(self.out), [])
-
-    def refusing_open(self, times):
-        """An open() whose first `times` exclusive report opens raise PermissionError, as a delete-pending name does."""
+    def refusing_open(self, suffix):
+        """An open() whose exclusive report opens for names ending in `suffix` raise PermissionError."""
         import builtins
         import errno
         real_open = builtins.open
@@ -1664,55 +1627,77 @@ class TestReviewRound7042(Base):
 
         def fake(path, *a, **k):
             mode = k.get("mode", a[0] if a else "r")
-            if str(path).endswith(".txt") and mode == "x" and len(refused) < times:
+            if str(path).endswith(suffix) and "logcheck-" in str(path) and mode == "x":
                 refused.append(path)
                 raise PermissionError(errno.EACCES, "Permission denied")
             return real_open(path, *a, **k)
         return fake, refused
 
-    def test_a_name_refused_once_is_retried_under_the_next_name(self):
+    def test_a_refused_text_name_stops_at_once_with_the_path_text(self):
         from unittest import mock
         z, rules = self.zip_and_rules()
-        fake, refused = self.refusing_open(1)
-        with mock.patch("builtins.open", fake):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertIn(code, (0, 1), err)
-        self.assertEqual(len(refused), 1)
-        names = sorted(os.listdir(self.out))
-        self.assertEqual(len(names), 2, names)
-        self.assertTrue(names[0].endswith("-2.json") and names[1].endswith("-2.txt"), names)
-
-    def test_a_folder_that_refuses_every_name_still_gets_the_path_text(self):
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        fake, refused = self.refusing_open(1000)
+        fake, refused = self.refusing_open(".txt")
         with mock.patch("builtins.open", fake):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        self.assertEqual(len(refused), plc._REFUSED_TRIES)
+        self.assertEqual(len(refused), 1, "the name was retried")
         self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("delete what it wrote", err)
+        self.assertNotIn("Traceback", err)
         self.assertEqual(os.listdir(self.out), [])
 
-    def test_the_name_search_stops_after_its_cap(self):
-        # Round 6 code looped for as long as names looked taken. Here 150 names look taken: the old code wrote the
-        # report under a far name (exit 0); now the run stops at the cap of 100 with exit 2 and says what to do.
+    def test_a_refused_json_name_stops_and_names_the_text_report(self):
         from unittest import mock
         z, rules = self.zip_and_rules()
-        real_lexists = os.path.lexists
-        calls = []
-
-        def fake_lexists(p):
-            if "logcheck-" in str(p) and len(calls) < 150:
-                calls.append(p)
-                return True
-            return real_lexists(p)
-        with mock.patch("os.path.lexists", fake_lexists):
+        fake, refused = self.refusing_open(".json")
+        with mock.patch("builtins.open", fake):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        self.assertEqual(len(calls), plc._NAME_TRIES)
-        self.assertIn("report names for this run", err)
-        self.assertIn("are all taken. Move old reports out of the folder, or give --out another folder.", err)
-        self.assertEqual(os.listdir(self.out), [])
+        self.assertEqual(len(refused), 1, "the name was retried")
+        txt = refused[0][:-len(".json")] + ".txt"
+        self.assertEqual(os.listdir(self.out), [os.path.basename(txt)], "the text report was removed")
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertIn(f"This run's report is incomplete, so delete what it wrote: {txt}.", err)
+
+    def test_a_run_never_removes_a_report_file(self):
+        # The simplified write path has no cleanup: os.remove is never called while writing.
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
+            with mock.patch.object(plc.os, "remove", side_effect=AssertionError("os.remove was called")):
+                code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2, err)
+        self.assertEqual(len(os.listdir(self.out)), 2)
+
+    def test_an_earlier_pair_in_the_same_second_moves_the_run_to_the_next_name(self):
+        import datetime
+        import types
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+
+        class Fixed(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 11, 22, 1, 2, 3)
+        with mock.patch.object(plc, "datetime", types.SimpleNamespace(datetime=Fixed)):
+            first, _ = self.run_main([z, "--rules", rules, "--out", self.out])
+            second, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertIn(first, (0, 1))
+        self.assertEqual(second, first, err)
+        names = sorted(os.listdir(self.out))
+        self.assertEqual(len(names), 4, names)
+        self.assertEqual(len([n for n in names if n.endswith("-2.txt") or n.endswith("-2.json")]), 2, names)
+
+    def test_out_on_a_file_gets_the_path_text_not_the_other_run_text(self):
+        z, rules = self.zip_and_rules()
+        blocker = os.path.join(self.dir, "a-file.txt")
+        with open(blocker, "w", encoding="utf-8") as f:
+            f.write("x")
+        code, err = self.run_main([z, "--rules", rules, "--out", blocker])
+        self.assertEqual(code, 2)
+        self.assertIn("Give --out a folder you can write to", err)
+        self.assertNotIn("another run or program", err)
 
     def test_a_real_dangling_link_on_the_report_name_is_skipped_and_left_alone(self):
         import datetime
@@ -1744,154 +1729,15 @@ class TestReviewRound7042(Base):
         self.assertTrue(os.path.isfile(link[:-len(".txt")] + "-2.txt"))
         self.assertTrue(os.path.isfile(link[:-len(".txt")] + "-2.json"))
 
-
-class TestReviewRound8042(Base):
-    """0.4.2 /code-review round 8: a refused .json name is retried like a refused .txt name, an unpaired .txt that
-    can't be removed is named in the error, and the bug-report text says how to make the log to attach."""
-
-    run_main = TestBadInput042.run_main
-    zip_and_rules = TestBadInput042.zip_and_rules
-
-    def refusing_json_open(self, times):
-        """An open() whose first `times` exclusive .json report opens raise PermissionError (a delete-pending name)."""
-        import builtins
-        import errno
-        real_open = builtins.open
-        refused = []
-
-        def fake(path, *a, **k):
-            mode = k.get("mode", a[0] if a else "r")
-            if str(path).endswith(".json") and "logcheck-" in str(path) and mode == "x" and len(refused) < times:
-                refused.append(path)
-                raise PermissionError(errno.EACCES, "Permission denied")
-            return real_open(path, *a, **k)
-        return fake, refused
-
-    def test_a_json_name_refused_once_moves_the_pair_to_the_next_name(self):
-        # Round 7 code caught only FileExistsError here: it stopped with exit 2 and kept an unpaired .txt.
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        fake, refused = self.refusing_json_open(1)
-        with mock.patch("builtins.open", fake):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertIn(code, (0, 1), err)
-        self.assertEqual(len(refused), 1)
-        names = sorted(os.listdir(self.out))
-        self.assertEqual(len(names), 2, names)
-        self.assertTrue(names[0].endswith("-2.json") and names[1].endswith("-2.txt"), names)
-
-    def test_json_names_refused_every_time_stop_at_the_limit_and_leave_nothing(self):
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        fake, refused = self.refusing_json_open(1000)
-        with mock.patch("builtins.open", fake):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
-        self.assertEqual(len(refused), plc._REFUSED_TRIES)
-        # Round 9: the run wrote (and removed) a .txt in that folder, so the folder isn't blamed.
-        self.assertIn("report names in a row were refused", err)
-        self.assertIn("other runs or programs are probably deleting reports in that folder", err)
-        self.assertNotIn("Give --out a folder you can write to", err)
-        self.assertNotIn("is kept", err)
-        self.assertNotIn("Traceback", err)
-        self.assertEqual(os.listdir(self.out), [])
-
-    def test_an_unpaired_txt_that_cant_be_removed_is_named(self):
-        # Round 7 code dropped the .txt from its list before the remove, so a failed remove left it unnamed and the
-        # error blamed the folder.
-        import builtins
-        import errno
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        real_open = builtins.open
-        real_remove = os.remove
-
-        def fake_open(path, *a, **k):
-            if str(path).endswith(".json") and "logcheck-" in str(path):
-                raise FileExistsError(errno.EEXIST, "exists")
-            return real_open(path, *a, **k)
-
-        def fake_remove(path):
-            if str(path).endswith(".txt") and "logcheck-" in str(path):
-                raise PermissionError(errno.EACCES, "Access is denied")
-            return real_remove(path)
-        with mock.patch("builtins.open", fake_open), mock.patch.object(plc.os, "remove", fake_remove):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
-        txt = [n for n in os.listdir(self.out) if n.endswith(".txt")]
-        self.assertEqual(len(txt), 1)
-        self.assertIn("couldn't be removed (Access is denied): " + os.path.join(self.out, txt[0]), err)
-        self.assertIn("Delete that file, then run again.", err)
-        self.assertNotIn("Give --out a folder you can write to", err)
-        self.assertNotIn("Traceback", err)
-
     def test_the_bug_text_says_how_to_make_the_log_to_attach(self):
         from unittest import mock
         z, rules = self.zip_and_rules()
         with mock.patch.object(plc.json, "dump", side_effect=TypeError("not serializable")):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        # Round 9: the advice names no fixed log name (one in the input folder is refused).
         self.assertIn("please run it again with --log FILE (a .txt file outside the input folder) and report it at", err)
         self.assertNotIn("papyrus-log-check.log.txt", err)
         self.assertIn("with that log file attached.", err)
-
-
-class TestReviewRound9042(Base):
-    """0.4.2 /code-review round 9: an unpaired .txt that is already gone isn't reported as undeletable, the refused
-    limit after this run wrote a file says names were refused, and the bug text points at the run's own log."""
-
-    run_main = TestBadInput042.run_main
-    zip_and_rules = TestBadInput042.zip_and_rules
-
-    def test_an_unpaired_txt_already_gone_moves_the_pair_to_the_next_name(self):
-        # Round 8 code treated FileNotFoundError like any other failed remove: exit 2, "Delete that file".
-        import builtins
-        import errno
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        real_open = builtins.open
-        real_remove = os.remove
-        taken = []
-
-        def fake_open(path, *a, **k):
-            mode = k.get("mode", a[0] if a else "r")
-            if str(path).endswith(".json") and "logcheck-" in str(path) and mode == "x" and not taken:
-                taken.append(path)
-                raise FileExistsError(errno.EEXIST, "exists")
-            return real_open(path, *a, **k)
-
-        def fake_remove(path):
-            if str(path).endswith(".txt") and "logcheck-" in str(path):
-                real_remove(path)  # someone else removed it first
-                raise FileNotFoundError(errno.ENOENT, "No such file or directory")
-            return real_remove(path)
-        with mock.patch("builtins.open", fake_open), mock.patch.object(plc.os, "remove", fake_remove):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertIn(code, (0, 1), err)
-        self.assertNotIn("Delete that file", err)
-        names = sorted(os.listdir(self.out))
-        self.assertEqual(len(names), 2, names)
-        self.assertTrue(names[0].endswith("-2.json") and names[1].endswith("-2.txt"), names)
-
-    def test_txt_names_refused_before_any_write_still_blame_the_folder(self):
-        # The names-refused text is only for a run that already wrote in the folder.
-        import builtins
-        import errno
-        from unittest import mock
-        z, rules = self.zip_and_rules()
-        real_open = builtins.open
-
-        def fake_open(path, *a, **k):
-            mode = k.get("mode", a[0] if a else "r")
-            if "logcheck-" in str(path) and mode == "x":
-                raise PermissionError(errno.EACCES, "Permission denied")
-            return real_open(path, *a, **k)
-        with mock.patch("builtins.open", fake_open):
-            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
-        self.assertIn("Give --out a folder you can write to", err)
-        self.assertNotIn("report names in a row were refused", err)
 
     def test_the_bug_text_names_the_log_this_run_already_has(self):
         from unittest import mock
