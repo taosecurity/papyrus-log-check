@@ -143,7 +143,7 @@ def clean_manifest(m):
         want = shapes.get(k)
         if want is not None and not isinstance(v, want):
             Log.write(f"manifest.json: '{k}' should be a {want.__name__}, not {type(v).__name__}; ignored")
-            if k == "listing":   # its lists were there, so stray .dll files in the input mustn't stand in for them
+            if k == "listing":   # a listing was there, so stray .dll files in the input mustn't stand in for its lists
                 out[k] = {"sfsePluginDlls": IGNORED, "dataPlugins": IGNORED}
             continue
         if k in ("created", "user", "computer", "note", "tool") and v is not None and not isinstance(v, str):
@@ -308,9 +308,11 @@ class Package:
         return logs
 
     def sfse_dlls(self):
-        """SFSE plugin DLL names (lower case): from a collector's manifest listing, else the .dll files in the
-        folder or zip. None when neither says anything, and when a manifest listing was there but ignored (a
-        collector package doesn't copy the DLLs, so stray .dll files in it say nothing)."""
+        """SFSE plugin DLL names (lower case): from a collector's manifest listing. Only an input whose manifest has
+        no listing at all (no manifest, or one without 'listing') uses the .dll files in the folder or zip instead.
+        None when nothing says anything, and whenever a manifest listing was there but its DLL list is missing,
+        null, empty because the game folder wasn't found, of the wrong shape or without a usable name (a collector
+        package doesn't copy the DLLs, so stray .dll files in it say nothing)."""
         present, listing = self._listing("sfsePluginDlls")
         if present:
             return listing
@@ -605,7 +607,7 @@ def script_frame(stack):
 
 
 def plugin_state(rules, pkg):
-    """'active', 'inactive', 'missing' or 'unknown' (the input can't tell: no plugins.txt / no DLL listing).
+    """'active', 'inactive', 'missing' or 'unknown' (the input can't tell: no plugins.txt / no usable DLL list).
     .esm plugins are looked up in plugins.txt, SFSE DLLs in the DLL listing. Starfield.esm is always active
     (0.4.0): the game loads it without listing it, so a rule file for the base game's own messages always runs.
     It counts only for a rule file whose only plugins are always-loaded ones: a file that also names its own
@@ -641,8 +643,8 @@ def plugin_state(rules, pkg):
 
 def not_loaded_reason(rules):
     """0.4.1: why a mod is NOT LOADED, naming what was really checked: its own .esm plugins in plugins.txt,
-    its DLLs in the input's SFSE plugin DLL list (the collector's manifest listing, else the .dll files in the
-    input), or both. Official masters aren't named: in a file with other plugins or DLLs they don't count. A file
+    its DLLs in the input's SFSE plugin DLL list (the collector's manifest listing; the .dll files in the input
+    only when the manifest has no listing at all), or both. Official masters aren't named: in a file with other plugins or DLLs they don't count. A file
     that names only official masters is NOT LOADED only when the input's Data plugin list lacks them."""
     own = [p for p in rules["plugins"] if not is_official(p)]
     parts = []

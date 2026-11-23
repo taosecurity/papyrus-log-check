@@ -1205,6 +1205,13 @@ class TestListings041Review(Base):
         self.assertEqual(len([x for x in lines if "sfsePluginDlls" in x]), 1)
         self.assertEqual(len([x for x in lines if "dataPlugins" in x]), 1)
 
+    def test_a_listing_without_the_key_logs_its_exact_note(self):
+        pkg = self.package(dict(MANIFEST, listing={"dataPlugins": ["Starfield.esm"]}), ["stray\\Other.dll"])
+        lines = []
+        with unittest.mock.patch.object(plc.Log, "write", lines.append):
+            self.assertIsNone(pkg.sfse_dlls())
+        self.assertEqual(lines, ["manifest.json: listing has no sfsePluginDlls; ignored"])
+
     # round 3
     def test_a_listing_of_the_wrong_shape_does_not_fall_back_to_stray_dlls(self):
         for listing in ({"sfsePluginDlls": "oops"}, {"sfsePluginDlls": 5}, "oops", ["x"]):
