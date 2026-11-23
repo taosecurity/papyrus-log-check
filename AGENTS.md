@@ -108,7 +108,8 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   entry (in either list) has `not_loaded_reason`, a sentence that names what was checked (plugins.txt, the SFSE
   plugin DLL list, or both).
 - **Exit codes:** 0 = no rule failed (FOUND counts as no failure); 1 = at least one FAIL; 2 = bad arguments, a bad
-  rule file (the message names the file and the field) or an input that couldn't be read.
+  rule file (the message names the file and the field), a rule file that isn't UTF-8, a `--root`, `--logs-dir` or
+  `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read.
 - **Log:** only when asked: `--verbose` to stderr, `--log FILE` to that file (overwritten each run; a name that
   would overwrite an input is refused).
 

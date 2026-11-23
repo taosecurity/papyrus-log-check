@@ -2,7 +2,31 @@
 
 ## 0.4.2 (unreleased)
 
-Defect-free fix pass on 0.4.1 (work in progress).
+### What's new
+
+This is a fix release with no new features. The install text and sample outputs in the README and AGENTS.md now name the current version, and a test keeps them from going stale again. A bad folder or output path, or a rule file that isn't UTF-8, now gets an error that says what to do. A mod name that your console can't show no longer stops the run.
+
+### Example
+
+`--root` on a folder that doesn't exist used to end with a raw Windows error. Now it names the option and the fix, and still exits with code 2:
+
+    > python papyrus_log_check.py examples\Papyrus.0.log --root D:\nonexistent-folder
+    papyrus-log-check 0.4.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    papyrus-log-check: --root D:\nonexistent-folder is not a folder. Give --root the folder that holds your project folders, or use --rules FILE.
+
+### Fixes
+
+- The README and AGENTS.md install steps, the banner in the README's sample outputs and the "run once on" line in AGENTS.md named 0.4.0. They now name the current version.
+- A new test fails when any of those version strings differs from the tool's version again. CHANGELOG.md is history and is exempt.
+- `--root`, `--logs-dir` and `--out` on a path that isn't a usable folder now give one error that names the option and the fix, instead of a raw Windows error. The exit code is 2.
+- A rule file that isn't UTF-8 (for example a UTF-16 file saved by Notepad) now gets an error that says so and tells you to save it as UTF-8. Before, the error blamed commas.
+- A mod name that the console's code page can't show now prints as `?` on the screen instead of stopping the run. The report and the JSON keep the real name.
+
+### Internal
+
+- Two docstrings and a comment still described the old fallback to stray `.dll` files. They now say that the files count only when the manifest has no listing at all.
+- A new test checks the log line that notes a manifest listing without the key.
+- The CI workflow moved off the deprecated Node.js 20 actions. It now uses the current `checkout`, `setup-python`, `upload-artifact` and `download-artifact` versions, pinned by commit.
 
 ## 0.4.1 (2026-11-22)
 
