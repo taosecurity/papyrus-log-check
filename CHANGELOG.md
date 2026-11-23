@@ -25,7 +25,8 @@ This is a fix release with no new features. The install text and sample outputs 
 - A report that can't be written for another reason, such as a full disk, now says that reason and what to check. Before, every write error blamed the `--out` path.
 - The log zip is now closed when a run ends, including a run that stops on an error, so the file isn't left locked on Windows. This now also holds when the zip can't be read part-way through.
 - A report that can't be written because the folder is locked or protected now says to give `--out` a folder you can write to, as before, and the full-disk text no longer mentions permissions.
-- A report write that fails part-way no longer leaves a half-written `.txt` or `.json` behind, and only a full disk or an I/O error now gets the "check that the disk has room" advice; any other error gets the "folder you can write to" text.
+- A report write that fails part-way no longer leaves a half-written `.txt` or `.json` behind. The report files are created exclusively, so a run never removes or overwrites another run's report, and a text report that was written in full stays when only the JSON fails (the error names it).
+- The error for a failed report write picks its advice by cause: a full disk or an I/O error gets "check that the disk has room", a path or permission problem gets "give --out a folder you can write to", and any other error gets a short "check the folder and the disk" text.
 
 ### Internal
 

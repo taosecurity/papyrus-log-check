@@ -1449,16 +1449,81 @@ class TestReviewRound2042(Base):
             self.assertIn("Give --out a folder you can write to", err)
             self.assertNotIn("disk has room", err)
 
-    def test_a_failed_write_leaves_no_half_written_report(self):
+    def failing_open(self, suffix, number):
+        """An open() that creates the file whose name ends in `suffix`, then fails on its first write."""
+        import builtins
+        real_open = builtins.open
+
+        def fake(path, *a, **k):
+            f = real_open(path, *a, **k)
+            if str(path).endswith(suffix):
+                def broken(*_a, **_k):
+                    raise OSError(number, "refused")
+                f.write = broken
+            return f
+        return fake
+
+    def test_a_failed_json_write_removes_the_json_and_keeps_the_complete_text_report(self):
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()
         with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
             code, err = self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertEqual(code, 2)
-        self.assertEqual(os.listdir(self.out), [])
+        names = os.listdir(self.out)
+        self.assertEqual([n for n in names if n.endswith(".json")], [])
+        self.assertEqual(len([n for n in names if n.endswith(".txt")]), 1)
+        self.assertIn("kept", err)
+        with open(os.path.join(self.out, names[0]), encoding="utf-8") as f:
+            self.assertIn("papyrus-log-check", f.read())
 
-    def test_an_unlisted_errno_gets_the_path_text_not_the_disk_text(self):
+    def test_a_failed_text_write_removes_the_half_written_file(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch("builtins.open", self.failing_open(".txt", errno.ENOSPC)):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertEqual(os.listdir(self.out), [])
+        self.assertNotIn("kept", err)
+
+    def test_a_failed_open_never_removes_a_file_this_run_did_not_create(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        os.makedirs(self.out, exist_ok=True)
+        taken = []
+        import builtins
+        real_open = builtins.open
+
+        def fake(path, mode="r", *a, **k):
+            # Another run creates the same report name between the exists check and our open.
+            if str(path).endswith(".txt") and mode == "x":
+                with real_open(path, "w") as other:
+                    other.write("other run")
+                taken.append(path)
+                raise FileExistsError(errno.EEXIST, "exists")
+            return real_open(path, mode, *a, **k)
+        with mock.patch("builtins.open", fake):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertEqual(len(taken), 1)
+        with open(taken[0], encoding="utf-8") as f:
+            self.assertEqual(f.read(), "other run")
+
+    def test_a_resource_error_gets_neither_the_disk_text_nor_the_path_text(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.EMFILE, "Too many open files")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Too many open files", err)
+        self.assertIn("Check the folder and the disk", err)
+        self.assertNotIn("disk has room", err)
+        self.assertNotIn("Give --out a folder you can write to", err)
+
+    def test_a_symbolic_link_loop_gets_the_path_text(self):
         import errno
         from unittest import mock
         z, rules = self.zip_and_rules()

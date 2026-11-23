@@ -1016,6 +1016,12 @@ def newest_zip(folder, *, from_env=False):
     return max(zips, key=key)
 
 
+# Report-write errors by cause (0.4.2): the disk itself, the path or its permissions; any other errno gets generic text.
+_DISK_ERRNOS = frozenset((errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO))
+_PATH_ERRNOS = frozenset(getattr(errno, name) for name in (
+    "ENOENT", "ENOTDIR", "EISDIR", "EINVAL", "EACCES", "EPERM", "EBUSY", "EROFS", "ENAMETOOLONG", "ELOOP", "EEXIST"))
+
+
 def run(args):
     opened = []  # the Package, so it is closed even when the run stops on an error
     try:
@@ -1145,32 +1151,42 @@ def _run(args, opened):
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
     report = text_report(data, args.max_lines)
-    made = []  # the report files this run created, removed again if the write fails part-way
+    # 0.4.2: each file is created exclusively ("x"), so a run never truncates another run's report, and a file is
+    # listed in `partial` only once this run created it. A failed write removes the file it was writing; a report
+    # that was written completely stays, and the error names it.
+    kept = []
+    partial = None
     try:
         os.makedirs(out_dir, exist_ok=True)
         n = 2
         while os.path.exists(base + ".txt") or os.path.exists(base + ".json"):  # two runs in one second
             base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}-{n}")
             n += 1
-        made.append(base + ".txt")
-        with open(base + ".txt", "w", encoding="utf-8") as f:
+        with open(base + ".txt", "x", encoding="utf-8") as f:
+            partial = base + ".txt"
             f.write(report)
-        made.append(base + ".json")
-        with open(base + ".json", "w", encoding="utf-8") as f:
+        partial = None
+        kept.append(base + ".txt")
+        with open(base + ".json", "x", encoding="utf-8") as f:
+            partial = base + ".json"
             json.dump(data, f, indent=1, ensure_ascii=False)
+        partial = None
     except OSError as e:
-        for leftover in made:
+        if partial:
             try:
-                os.remove(leftover)
+                os.remove(partial)
             except OSError:
                 pass
-        # Only these errors mean the disk itself is the problem; every other one is about the path.
-        disk_problem = (errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC), errno.EIO)
-        if e.errno not in disk_problem:
-            raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
-                             f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).")
-        raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). The folder is fine as a path, so check "
-                         f"that the disk has room, or give --out another folder.")
+        saved = f" The text report was written in full and is kept: {kept[0]}." if kept else ""
+        why = e.strerror or e
+        if e.errno in _DISK_ERRNOS:
+            raise ValueError(f"Can't write the report in {out_dir} ({why}). The folder is fine as a path, so check "
+                             f"that the disk has room, or give --out another folder.{saved}")
+        if e.errno in _PATH_ERRNOS:
+            raise ValueError(f"Can't write the report in {out_dir} ({why}). Give --out a folder you can write to "
+                             f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).{saved}")
+        raise ValueError(f"Can't write the report in {out_dir} ({why}). Check the folder and the disk, or give --out "
+                         f"another folder.{saved}")
     Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
     print(safe(pkg.name))
