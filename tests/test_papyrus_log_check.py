@@ -1386,9 +1386,17 @@ class TestReviewRound2042(Base):
             zf = real(*a, **k)
             opened.append(zf)
             return zf
+        real_close = plc.Package.close
+        closes = []
+
+        def counting_close(pkg):
+            closes.append(pkg)
+            return real_close(pkg)
         with mock.patch.object(plc.zipfile, "ZipFile", side_effect=spy):
-            self.run_main([z, "--rules", rules, "--out", self.out])
+            with mock.patch.object(plc.Package, "close", counting_close):
+                self.run_main([z, "--rules", rules, "--out", self.out])
         self.assertTrue(opened)
+        self.assertEqual(len(closes), 1, "run() must close the Package itself")
         self.assertTrue(all(zf.fp is None for zf in opened), "the zip was left open")
 
     def test_a_permission_error_says_to_give_a_folder_you_can_write_to(self):
@@ -1404,15 +1412,20 @@ class TestReviewRound2042(Base):
     def test_the_environment_variable_error_is_one_clear_sentence(self):
         gone = os.path.join(self.dir, "gone")
         with self.assertRaises(FileNotFoundError) as cm:
-            plc.newest_zip(gone, "env")
+            plc.newest_zip(gone, from_env=True)
         self.assertIn("PAPYRUS_LOG_CHECK_LOGS is set to '" + gone + "', which is not a folder.", str(cm.exception))
+        with self.assertRaises(FileNotFoundError) as cm:
+            plc.newest_zip(gone)
+        self.assertIn("--logs-dir '" + gone + "' is not a folder", str(cm.exception))
 
     def test_main_survives_a_stream_that_is_closed_during_the_run(self):
+        # A guard: a closed stream makes reconfigure raise ValueError, which main() already skipped; this keeps it so.
         import io
         from unittest import mock
         raw = io.BytesIO()
         console = io.TextIOWrapper(raw, encoding="utf-8", errors="strict", newline="")
         z, rules = self.zip_and_rules()
+        expected, _ = self.run_main([z, "--rules", rules, "--out", self.out])
         real_run = plc._main
 
         def closing(argv):
@@ -1422,7 +1435,28 @@ class TestReviewRound2042(Base):
         with mock.patch.object(plc, "_main", side_effect=closing):
             with mock.patch.object(plc.sys, "stderr", console):
                 code = plc.main([z, "--rules", rules, "--out", self.out])
-        self.assertIn(code, (0, 1))
+        self.assertTrue(console.closed)
+        self.assertEqual(code, expected)
+
+    def test_a_read_only_folder_says_to_give_a_folder_you_can_write_to(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        for number in (errno.EROFS, errno.ENAMETOOLONG):
+            with mock.patch.object(plc.json, "dump", side_effect=OSError(number, "refused")):
+                code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+            self.assertEqual(code, 2)
+            self.assertIn("Give --out a folder you can write to", err)
+            self.assertNotIn("disk has room", err)
+
+    def test_a_full_disk_still_says_to_check_the_room(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("disk has room", err)
 
 
 class TestDocsVersion(unittest.TestCase):

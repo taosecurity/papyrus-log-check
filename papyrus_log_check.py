@@ -997,11 +997,11 @@ def text_report(data, max_lines):
 
 # ----------------------------------------------------------------------------- main
 
-def newest_zip(folder, source="--logs-dir"):
+def newest_zip(folder, from_env=False):
     """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time.
-    `source` names where the folder came from (the option or the environment variable) for the error text."""
+    `from_env` is True when the folder came from PAPYRUS_LOG_CHECK_LOGS (not --logs-dir), for the error text."""
     if not os.path.isdir(folder):
-        if source == "env":
+        if from_env:
             raise FileNotFoundError(f"PAPYRUS_LOG_CHECK_LOGS is set to '{folder}', which is not a folder. "
                                     f"Set it to an existing folder that holds log zips, or give --logs-dir.")
         raise FileNotFoundError(f"--logs-dir '{folder}' is not a folder. Give an existing folder that holds log zips "
@@ -1030,13 +1030,13 @@ def _run(args, opened):
     zpath = args.input
     if not zpath:
         logs_dir = args.logs_dir
-        source = "--logs-dir"
+        from_env = False
         if not logs_dir:
             logs_dir = os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
-            source = "env"
+            from_env = True
         if not logs_dir:
             raise ValueError("Give a log file, a folder or a zip, or use --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS.")
-        zpath = newest_zip(logs_dir, source)
+        zpath = newest_zip(logs_dir, from_env)
     pkg = Package(zpath)
     opened.append(pkg)
     if not pkg.logs:
@@ -1156,7 +1156,10 @@ def _run(args, opened):
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, ensure_ascii=False)
     except OSError as e:
-        if isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError, PermissionError)) or                 e.errno in (errno.EINVAL, errno.ENOENT, errno.EACCES, errno.EPERM, errno.EBUSY):
+        path_problem = (errno.EINVAL, errno.ENOENT, errno.EACCES, errno.EPERM, errno.EBUSY, errno.EROFS,
+                        errno.ENAMETOOLONG)
+        if (isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError, PermissionError))
+                or e.errno in path_problem):
             raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
                              f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).")
         raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). The folder is fine as a path, so check "
@@ -1205,8 +1208,7 @@ def main(argv=None):
     finally:
         for stream, old in saved:
             try:
-                if not stream.closed:
-                    stream.reconfigure(errors=old)
+                stream.reconfigure(errors=old)  # a stream closed during the run raises ValueError: skipped
             except (AttributeError, ValueError, OSError):
                 pass
 
