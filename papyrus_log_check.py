@@ -68,6 +68,7 @@ CRASH_RE = re.compile(r"(?:^|/)(?:crashlogs/[^/]+|crashlog[^/]*\.txt|crash-[^/]*
 EVENT_HEAD_RE = re.compile(r"^====\s+(\S+)\s+(.+?)\s+ID\s+(\d+)\s*$")
 
 ZIP, FOLDER, LOG_FILE = "zip", "folder", "log file"
+IGNORED = object()  # 0.4.1: a manifest listing that was there but had the wrong shape (says nothing, like an empty one)
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
@@ -142,16 +143,21 @@ def clean_manifest(m):
         want = shapes.get(k)
         if want is not None and not isinstance(v, want):
             Log.write(f"manifest.json: '{k}' should be a {want.__name__}, not {type(v).__name__}; ignored")
+            if k == "listing":   # its lists were there, so stray .dll files in the input mustn't stand in for them
+                out[k] = {"sfsePluginDlls": IGNORED, "dataPlugins": IGNORED}
             continue
         if k in ("created", "user", "computer", "note", "tool") and v is not None and not isinstance(v, str):
             v = str(v)
         out[k] = v
-    if "listing" in out and not isinstance(out["listing"].get("sfsePluginDlls", []), list):
-        Log.write("manifest.json: listing.sfsePluginDlls should be a list; ignored")
-        out["listing"] = {}
-    if "listing" in out and not isinstance(out["listing"].get("dataPlugins", []), list):
-        Log.write("manifest.json: listing.dataPlugins should be a list; ignored")
-        out["listing"] = {k: v for k, v in out["listing"].items() if k != "dataPlugins"}
+    listing = out.get("listing")
+    if listing:
+        listing = dict(listing)
+        for key in ("sfsePluginDlls", "dataPlugins"):
+            v = listing.get(key)
+            if v is not None and v is not IGNORED and not isinstance(v, list):
+                Log.write(f"manifest.json: listing.{key} should be a list; ignored")
+                listing[key] = IGNORED
+        out["listing"] = listing
     return out
 
 
@@ -167,6 +173,7 @@ class Package:
         self.path = path
         self.name = os.path.basename(os.path.normpath(path))
         self.zf = None
+        self._logged = set()  # keys of the notes _log_once has written
         self.entries = {}  # lower-case path with / -> (key for _raw, path with /)
         if os.path.isdir(path):
             self.kind = FOLDER
@@ -311,7 +318,7 @@ class Package:
     def data_plugins(self):
         """0.4.1: the plugin files in the game's Data folder (lower case), from a collector's manifest listing
         (listing.dataPlugins). None when the input has no such listing, or one without Starfield.esm (a real Data
-        folder always holds it, so such a list is empty or cut short and says nothing)."""
+        folder always holds it, so such a list says nothing). A list cut short after Starfield.esm can't be told apart."""
         _, listing = self._listing("dataPlugins")
         if listing is not None and "starfield.esm" not in listing:
             self._log_once("dataPlugins-nosf", "manifest.json: listing.dataPlugins has no Starfield.esm; ignored")
@@ -319,9 +326,8 @@ class Package:
         return listing
 
     def _log_once(self, key, text):
-        seen = self.__dict__.setdefault("_logged", set())
-        if key not in seen:
-            seen.add(key)
+        if key not in self._logged:
+            self._logged.add(key)
             Log.write(text)
 
     def _listing(self, key):
@@ -332,14 +338,18 @@ class Package:
         listing = self.manifest.get("listing", {}).get(key)
         if listing is None:
             return False, None
+        if listing is IGNORED:
+            return True, None
         if not listing and "gamePath" in self.manifest and not self.manifest.get("gamePath"):
             self._log_once(key, f"manifest.json: listing.{key} is empty because the game folder wasn't found; ignored")
             return True, None
         names = set()
         for d in listing:
             name = d.get("name") if isinstance(d, dict) else d
-            if isinstance(name, str) and name.strip():
-                names.add(os.path.basename(name.strip().replace("\\", "/")).lower())
+            if isinstance(name, str):
+                base = os.path.basename(name.strip().replace("\\", "/")).strip().lower()
+                if base:
+                    names.add(base)
         if listing and not names:
             self._log_once(key, f"manifest.json: listing.{key} has no entry with a name; ignored")
             return True, None

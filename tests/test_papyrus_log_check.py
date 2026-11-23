@@ -1194,6 +1194,28 @@ class TestListings041Review(Base):
         self.assertEqual(len([x for x in lines if "sfsePluginDlls" in x]), 1)
         self.assertEqual(len([x for x in lines if "dataPlugins" in x]), 1)
 
+    # round 3
+    def test_a_listing_of_the_wrong_shape_does_not_fall_back_to_stray_dlls(self):
+        for listing in ({"sfsePluginDlls": "oops"}, {"sfsePluginDlls": 5}, "oops", ["x"]):
+            with self.subTest(listing=listing):
+                pkg = self.package(dict(MANIFEST, listing=listing), ["stray\\Other.dll"])
+                self.assertIsNone(pkg.sfse_dlls())
+                self.assertIsNone(pkg.data_plugins())
+
+    def test_a_bad_dll_list_keeps_a_good_data_list(self):
+        pkg = self.package(dict(MANIFEST, listing={"sfsePluginDlls": 5, "dataPlugins": ["Starfield.esm"]}))
+        self.assertIsNone(pkg.sfse_dlls())
+        self.assertEqual(pkg.data_plugins(), {"starfield.esm"})
+        _, res = self.check_manifest(dict(RULES, plugins=["ShatteredSpace.esm"]),
+                                     {"sfsePluginDlls": 5, "dataPlugins": ["Starfield.esm"]})
+        self.assertEqual(res["status"], plc.NOT_LOADED)
+
+    def test_an_entry_with_no_file_name_is_skipped(self):
+        pkg = self.package(dict(MANIFEST, listing={"sfsePluginDlls": ["Data\\SFSE\\Plugins\\", "  ", "a/ "]}))
+        self.assertIsNone(pkg.sfse_dlls())
+        pkg = self.package(dict(MANIFEST, listing={"sfsePluginDlls": ["Data/SFSE/Plugins/", "One.dll"]}))
+        self.assertEqual(pkg.sfse_dlls(), {"one.dll"})
+
 
 if __name__ == "__main__":
     unittest.main()
