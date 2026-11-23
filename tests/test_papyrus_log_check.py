@@ -1306,6 +1306,52 @@ class TestBadInput042(Base):
         self.assertNotIn("commas and quotes", err)
 
 
+class TestReviewRound1042(Base):
+    """0.4.2 /code-review round 1: error text names its real source and cause, and the console mode is lenient only during main()."""
+
+    run_main = TestBadInput042.run_main
+    zip_and_rules = TestBadInput042.zip_and_rules
+
+    def test_a_bad_environment_folder_names_the_variable(self):
+        _, rules = self.zip_and_rules()
+        old = os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
+        os.environ["PAPYRUS_LOG_CHECK_LOGS"] = os.path.join(self.dir, "gone")
+        try:
+            code, err = self.run_main(["--rules", rules, "--out", self.out])
+        finally:
+            if old is None:
+                del os.environ["PAPYRUS_LOG_CHECK_LOGS"]
+            else:
+                os.environ["PAPYRUS_LOG_CHECK_LOGS"] = old
+        self.assertEqual(code, 2)
+        self.assertIn("PAPYRUS_LOG_CHECK_LOGS", err)
+        self.assertNotIn("--logs-dir " + os.path.join(self.dir, "gone"), err)
+
+    def test_a_full_disk_does_not_blame_the_path(self):
+        import errno
+        from unittest import mock
+        z, rules = self.zip_and_rules()
+        with mock.patch.object(plc.json, "dump", side_effect=OSError(errno.ENOSPC, "No space left on device")):
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("No space left on device", err)
+        self.assertIn("disk has room", err)
+        self.assertNotIn("Give --out a folder you can write to", err)
+
+    def test_argparse_text_with_an_unencodable_name_does_not_crash_and_the_mode_comes_back(self):
+        import contextlib
+        import io
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+        with contextlib.redirect_stderr(console):
+            with self.assertRaises(SystemExit) as cm:
+                plc.main(["--max-lines", "名前"])
+            self.assertEqual(console.errors, "strict")
+        self.assertEqual(cm.exception.code, 2)
+        console.flush()
+        self.assertIn(b"??", raw.getvalue())
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 

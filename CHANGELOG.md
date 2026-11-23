@@ -20,7 +20,10 @@ This is a fix release with no new features. The install text and sample outputs 
 - A new test fails when any of those version strings differs from the tool's version again. CHANGELOG.md is history and is exempt.
 - `--root`, `--logs-dir` and `--out` on a path that isn't a usable folder now give one error that names the option and the fix, instead of a raw Windows error. The exit code is 2.
 - A rule file that isn't UTF-8 (for example a UTF-16 file saved by Notepad) now gets an error that says so and tells you to save it as UTF-8. Before, the error blamed commas.
-- A mod name that the console's code page can't show now prints as `?` on the screen instead of stopping the run. The report and the JSON keep the real name.
+- A mod name that the console's code page can't show now prints as `?` on the screen instead of stopping the run. The report and the JSON keep the real name. This now also covers the usage text that argparse prints for a bad option, and the console's old setting comes back when the run ends.
+- A folder that comes from the environment variable `PAPYRUS_LOG_CHECK_LOGS` is now named as such in the "is not a folder" error, not blamed on `--logs-dir`.
+- A report that can't be written for another reason, such as a full disk, now says that reason and what to check. Before, every write error blamed the `--out` path.
+- The log zip is now closed when a run ends, including a run that stops on an error, so the file isn't left locked on Windows.
 
 ### Internal
 

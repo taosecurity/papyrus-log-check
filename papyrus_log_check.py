@@ -26,6 +26,7 @@ Exit code: 0 = no FAIL, 1 = at least one FAIL, 2 = usage, rule file or input err
 
 import argparse
 import datetime
+import errno
 import hashlib
 import json
 import os
@@ -207,6 +208,11 @@ class Package:
         self.sha256 = self._sha256()
         Log.write(f"input: {self.kind} {path}: {len(self.entries)} files, {len(self.logs)} Papyrus log(s), "
                   f"plugins.txt {'found' if self.plugins is not None else 'none'}, manifest {'found' if self.manifest else 'none'}")
+
+    def close(self):
+        """Lets go of the zip file (0.4.2: run() calls this, so a run that stops on an error doesn't keep the zip locked)."""
+        if self.zf is not None:
+            self.zf.close()
 
     def _raw(self, key):
         if self.zf is not None:
@@ -984,11 +990,12 @@ def text_report(data, max_lines):
 
 # ----------------------------------------------------------------------------- main
 
-def newest_zip(folder):
-    """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time."""
+def newest_zip(folder, source="--logs-dir"):
+    """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time.
+    `source` names where the folder came from (the option or the environment variable) for the error text."""
     if not os.path.isdir(folder):
-        raise FileNotFoundError(f"--logs-dir {folder} is not a folder. Give an existing folder that holds log zips "
-                                f"(or set PAPYRUS_LOG_CHECK_LOGS to one).")
+        raise FileNotFoundError(f"{source} {folder} is not a folder. Give an existing folder that holds log zips "
+                                f"(with --logs-dir, or in PAPYRUS_LOG_CHECK_LOGS).")
     zips = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".zip")]
     if not zips:
         raise FileNotFoundError(f"There is no .zip in {folder}.")
@@ -1000,14 +1007,28 @@ def newest_zip(folder):
 
 
 def run(args):
+    opened = []  # the Package, so it is closed even when the run stops on an error
+    try:
+        return _run(args, opened)
+    finally:
+        for pkg in opened:
+            pkg.close()
+
+
+def _run(args, opened):
     root = os.path.abspath(args.root)
     zpath = args.input
     if not zpath:
-        logs_dir = args.logs_dir or os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
+        logs_dir = args.logs_dir
+        source = "--logs-dir"
+        if not logs_dir:
+            logs_dir = os.environ.get("PAPYRUS_LOG_CHECK_LOGS")
+            source = "The environment variable PAPYRUS_LOG_CHECK_LOGS, set to"
         if not logs_dir:
             raise ValueError("Give a log file, a folder or a zip, or use --logs-dir, or set PAPYRUS_LOG_CHECK_LOGS.")
-        zpath = newest_zip(logs_dir)
+        zpath = newest_zip(logs_dir, source)
     pkg = Package(zpath)
+    opened.append(pkg)
     if not pkg.logs:
         raise ValueError(f"No Papyrus.N.log was found in {pkg.name}. (You can also give a single log file with any name.)")
 
@@ -1125,8 +1146,11 @@ def run(args):
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, ensure_ascii=False)
     except OSError as e:
-        raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
-                         f"(a path that is not a file and has no characters Windows refuses).")
+        if isinstance(e, (FileExistsError, NotADirectoryError, IsADirectoryError)) or e.errno in (errno.EINVAL, errno.ENOENT):
+            raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). Give --out a folder you can write to "
+                             f"(a path that is not a file and has no characters Windows refuses).")
+        raise ValueError(f"Can't write the report in {out_dir} ({e.strerror or e}). The folder is fine as a path, so check "
+                         f"that the disk has room and that you may write there, or give --out another folder.")
     Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
     print(safe(pkg.name))
@@ -1156,6 +1180,27 @@ class _VersionAction(argparse.Action):
 
 
 def main(argv=None):
+    """Runs the tool. 0.4.2: for the whole call, a character the console's code page can't show prints as ? instead
+    of stopping the run (argparse's own usage and error text included); the streams' old error mode comes back after."""
+    saved = []
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            old = stream.errors
+            stream.reconfigure(errors="replace")
+            saved.append((stream, old))
+        except (AttributeError, ValueError):
+            pass
+    try:
+        return _main(argv)
+    finally:
+        for stream, old in saved:
+            try:
+                stream.reconfigure(errors=old)
+            except (AttributeError, ValueError):
+                pass
+
+
+def _main(argv):
     ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
                     help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
@@ -1192,11 +1237,6 @@ def main(argv=None):
         print(BYLINE)
         print("Free software under the MIT license. It comes with no warranty.")
         return 0
-    for stream in (sys.stdout, sys.stderr):  # 0.4.2: a mod name the console's code page can't show prints as ? instead of stopping the run
-        try:
-            stream.reconfigure(errors="replace")
-        except (AttributeError, ValueError):
-            pass
     print(BYLINE, file=sys.stderr)  # on stderr, so the summary on stdout stays the same for scripts
     try:
         Log.to_stderr = args.verbose
