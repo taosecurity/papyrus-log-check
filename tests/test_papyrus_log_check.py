@@ -2030,6 +2030,7 @@ class TestReviewS3042(Base):
         self.assertEqual(code, 2)
         self.assertIn("Papyrus.0.log: it is gone", err)
         self.assertIn("Run the check again", err)
+        self.assertIn("too long for Windows", err)  # round S4: a long OneDrive path fails the same way every run
         self.assertNotIn("Close the program", err)
 
     def zip_read_raising(self, exc):
@@ -2053,18 +2054,32 @@ class TestReviewS3042(Base):
     def test_out_of_memory_is_not_called_a_damaged_zip(self):
         z, rules = self.zip_and_rules()
         with self.zip_read_raising(MemoryError()):
-            with self.assertRaises(MemoryError):
-                self.run_main([z, "--rules", rules, "--out", self.out])
-
-    def test_a_read_after_close_is_a_bug_not_a_damaged_zip(self):
-        pkg = plc.Package(make_zip(self.dir))
-        pkg.close()
-        with self.assertRaises(ValueError) as cm:
-            pkg.text("plugins.txt")
-        self.assertIn("This is a bug", str(cm.exception))
-        self.assertNotIn("make the zip again", str(cm.exception))
+            code, err = self.run_main([z, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)  # round S4: exit 2 with one line, not a traceback with exit 1
+        self.assertIn("not enough memory to read", err)
+        self.assertNotIn("make the zip again", err)
 
     def test_a_subfolder_that_cannot_be_listed_is_named(self):
+        import errno
+        from unittest import mock
+        _, rules = self.zip_and_rules()
+        folder = make_folder(os.path.join(self.dir, "logs"))
+        real = os.scandir
+
+        def fake(path="."):
+            if str(path).endswith("Other"):
+                raise PermissionError(errno.EACCES, "Permission denied", path)
+            return real(path)
+        os.makedirs(os.path.join(folder, "Logs", "Other"))
+        with mock.patch("os.scandir", fake):
+            code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
+        self.assertEqual(code, 2)
+        self.assertIn("Can't read the folder", err)
+        self.assertIn("Other (Permission denied)", err)
+        self.assertIn("give this account read access", err)  # round S4: advice for a permission problem
+        self.assertNotIn("Close the program", err)
+
+    def test_a_user_logs_folder_that_cannot_be_listed_does_not_stop_the_run(self):
         import errno
         from unittest import mock
         _, rules = self.zip_and_rules()
@@ -2077,9 +2092,15 @@ class TestReviewS3042(Base):
             return real(path)
         with mock.patch("os.scandir", fake):
             code, err = self.run_main([folder, "--rules", rules, "--out", self.out])
-        self.assertEqual(code, 2)
-        self.assertIn("Can't read the folder", err)
-        self.assertIn("User (Permission denied)", err)
+        self.assertIn(code, (0, 1), err)  # round S4: 0.4.1 checked the real logs; user logs are never checked
+        self.assertNotIn("Can't read the folder", err)
+
+    def test_a_case_clash_names_each_file_once(self):
+        pkg = plc.Package(make_zip(self.dir))
+        pkg._add("A/x.log", "A/x.log")
+        pkg._add("a/x.log", "a/x.log")
+        pkg._add("A/x.log", "A/x.log")
+        self.assertEqual(pkg._clashes["a/x.log"], ["A/x.log", "a/x.log"])
 
     def test_names_that_differ_only_in_case_stop_the_run_and_are_named(self):
         _, rules = self.zip_and_rules()

@@ -112,8 +112,9 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read
   (a zip entry that is damaged or uses a compression method Python can't read says to make the zip again; a log
   file in a folder that can't be read says to close the program holding it or copy the logs; a log file that
-  went away during the run says to run again; a subfolder that can't be listed is named; two names that differ
-  only in case are both named, to keep one). A bad option value gets Python's usage line and error instead of
+  went away during the run says to run again; a subfolder that can't be listed is named, except a Papyrus `User`
+  log folder, which is skipped; when the check reads a file whose name differs from another only in case, both
+  are named, to keep one). A bad option value gets Python's usage line and error instead of
   the tool's one-line error. A character the console can't show prints as a Python backslash escape (`\xNN`, `\uXXXX` or `\UXXXXXXXX`)
   on stdout and stderr; run `python -X utf8 papyrus_log_check.py ...` when a script must read the report paths
   from stdout with every valid character as it is (a name that isn't valid Unicode still prints as an escape).

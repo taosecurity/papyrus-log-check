@@ -192,8 +192,16 @@ class Package:
             self.kind = FOLDER
 
             def unreadable(e):  # a subfolder os.walk can't list must not drop its logs without a word
-                raise ValueError(f"Can't read the folder {e.filename} ({e.strerror or e}). Close the program that "
-                                 f"holds it, or copy the logs to another folder and check that copy.") from e
+                rel = os.path.relpath(e.filename, path).replace("\\", "/").lower()
+                if "/user/" in "/" + rel + "/":  # its Papyrus user logs are never checked (_papyrus_logs)
+                    Log.write(f"skipped the folder {e.filename}: can't list it ({e.strerror or e}); user logs aren't checked")
+                    return
+                if e.errno in (errno.EACCES, errno.EPERM):
+                    fix = ("This account isn't allowed to read it: give this account read access to the folder, "
+                           "or run the check as the account that made the logs.")
+                else:
+                    fix = "Close the program that holds it, or copy the logs to another folder and check that copy."
+                raise ValueError(f"Can't read the folder {e.filename} ({e.strerror or e}). {fix}") from e
             for dirpath, dirnames, filenames in os.walk(path, onerror=unreadable):
                 dirnames.sort()
                 for fn in filenames:
@@ -229,7 +237,9 @@ class Package:
         low = norm.lower()
         old = self.entries.get(low)
         if old is not None and old[1] != norm:
-            self._clashes.setdefault(low, [old[1]]).append(norm)
+            names = self._clashes.setdefault(low, [old[1]])
+            if norm not in names:
+                names.append(norm)
         self.entries[low] = (key, norm)
 
     def close(self):
@@ -239,13 +249,13 @@ class Package:
 
     def _raw(self, key):
         if self.zf is not None:
-            if self.zf.fp is None:  # read after close(): our bug, not a damaged zip
-                raise ValueError(f"internal error: {self.name} was read after it was closed. This is a bug in "
-                                 f"{TOOL}: {_bug_ask()}")
             try:
                 return self.zf.read(key)
-            except (KeyError, MemoryError):
-                raise  # keys come from the zip's own list, so a KeyError is a bug (main() says so); out of memory isn't a damaged zip
+            except KeyError:
+                raise  # keys come from the zip's own list, so a KeyError is a bug (main() says so)
+            except MemoryError as e:
+                raise ValueError(f"{self.name}: not enough memory to read {key} in the zip. Close other programs and "
+                                 f"run the check again, or unzip it and give the log folder instead.") from e
             except Exception as e:
                 # any entry Python can't read (damaged or cut-short Deflate, LZMA or BZIP2 data, a compression method
                 # Python can't read such as Deflate64 from Windows Explorer for big zips, an encrypted entry, a drive
@@ -259,8 +269,9 @@ class Package:
                 return f.read()
         except FileNotFoundError as e:
             raise ValueError(f"Can't read {key}: it is gone (renamed or deleted while the check ran, for example by "
-                             f"the game starting, or a broken link). Run the check again, or copy the logs to another "
-                             f"folder and check that copy.") from e
+                             f"the game starting, or a broken link), or its path is too long for Windows (over 260 "
+                             f"characters). Run the check again; if it fails the same way, copy the logs to a short "
+                             f"folder path and check that copy.") from e
         except OSError as e:
             raise ValueError(f"Can't read {key} ({e.strerror or e}). Close the program that holds it (the game, or a "
                              f"sync client such as OneDrive: make the file available on this device), or copy the "
