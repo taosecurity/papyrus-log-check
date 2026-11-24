@@ -244,6 +244,41 @@ If the report can't be written, the run exits with code 2 and one error that nam
 
 With `--root`, a rule file that can't be read at all is skipped and listed as SKIPPED in the summary and the report. A bad pattern in the rule file of a mod that isn't loaded never stops the run. A bad pattern in a loaded mod's rule file does stop it, with exit code 2 and the file and pattern named.
 
+## Check a quest's stages
+
+A quest mod can write one log line for each stage it sets, from its quest script or a stage fragment, such as `Debug.Trace("[TWE] stage 20: letter read")`. A rule file then proves which stages the tester reached, and the `order` rule proves that they came in the right order. [`examples/example-quest.logrules.json`](examples/example-quest.logrules.json) does this for a made-up mod, Tidewater Errand, whose quest has stages 10, 20 and 30, and [`examples/example-quest.log`](examples/example-quest.log) is a made-up log of one good run. Both are in the repository's `examples` folder. This is a real run on them:
+
+```
+> python papyrus_log_check.py examples\example-quest.log --rules examples\example-quest.logrules.json
+papyrus-log-check 0.4.2 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+example-quest.log
+  PASS       Tidewater Errand 1.0.0
+Report: ...\out\logcheck-20261124-123228-run20261124-123230.txt
+JSON:   ...\out\logcheck-20261124-123228-run20261124-123230.json
+```
+
+The report shows each stage's line and the order result:
+
+```
+   PASS      expect stage-10 (at least 1): 1 found
+             example-quest.log:3  [20:04:40] [TWE] stage 10: quest started
+   PASS      expect stage-20 (at least 1): 1 found
+             example-quest.log:4  [20:09:03] [TWE] stage 20: letter read
+   PASS      expect stage-30 (at least 1): 1 found
+             example-quest.log:7  [20:12:51] [TWE] stage 30: copper delivered
+   PASS      order started > stage-10 > stage-20 > stage-30: in order
+```
+
+If the tester never read the letter, the log has no stage 20 or stage 30 line, and the report says so. The summary still reads PASS, because a stage that wasn't tried isn't a failure:
+
+```
+   NOT SEEN  expect stage-20 (at least 1): 0 found
+   NOT SEEN  expect stage-30 (at least 1): 0 found
+   NOT SEEN  order started > stage-10 > stage-20 > stage-30: not all seen: stage-20, stage-30
+```
+
+To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --filter <name> --details`.
+
 ## Rule files
 
 Each mod has one JSON rule file. [`examples/example-beacon.logrules.json`](examples/example-beacon.logrules.json) is a complete one for a made-up mod, and this one has the same shape:

@@ -1,0 +1,24 @@
+{
+  "mod": "Tidewater Errand",
+  "version": "1.0.0",
+  "plugins": ["TidewaterErrand.esm"],
+  "names": ["TidewaterErrand", "tidewater"],
+  "prefix": "\\[TWE\\]",
+  "scripts": "^TWE:|\\bTWE:",
+  "expect": [
+    {"id": "started", "re": "\\[TWE\\] started, version {version}", "always": true,
+     "show": "[TWE] started, version …",
+     "means": "The mod's quest script writes this line at every new game and every load. If it is missing, the quest never ran."},
+    {"id": "stage-10", "re": "\\[TWE\\] stage 10: quest started",
+     "means": "The quest reached stage 10, when the player first reached a spaceport."},
+    {"id": "stage-20", "re": "\\[TWE\\] stage 20: letter read",
+     "means": "The quest reached stage 20, when the player read the letter."},
+    {"id": "stage-30", "re": "\\[TWE\\] stage 30: copper delivered",
+     "means": "The quest reached its last stage and finished."}
+  ],
+  "order": [["started", "stage-10", "stage-20", "stage-30"]],
+  "forbid": [
+    {"id": "no-skipped-stage", "re": "\\[TWE\\] WARNING: stage \\d+ set before stage \\d+",
+     "means": "A stage was set before the stage that must come first, for example by a console setstage."}
+  ]
+}
