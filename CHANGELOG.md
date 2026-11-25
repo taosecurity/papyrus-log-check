@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.3 (not yet released)
+## 0.4.3 (2026-11-25)
 
 ### What's new
 
