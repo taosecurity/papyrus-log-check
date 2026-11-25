@@ -14,6 +14,8 @@ Unpack the zip and run the quest example from the unpacked folder:
     papyrus-log-check 0.4.3 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
     example-quest.log
       PASS       Tidewater Errand 1.0.0
+    Report: out\logcheck-....txt
+    JSON:   out\logcheck-....json
 
 ## 0.4.2 (2026-11-22)
 

@@ -277,7 +277,7 @@ If the tester never read the letter, the log has no stage 20 or stage 30 line, a
    NOT SEEN  order started > stage-10 > stage-20 > stage-30: not all seen: stage-20, stage-30
 ```
 
-To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `names`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --filter <name> --details` ([sf-save-reader](https://github.com/taosecurity/sf-save-reader), a separate tool).
+To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `names`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --data <Data folder> --filter <name> --details` ([sf-save-reader](https://github.com/taosecurity/sf-save-reader), a separate tool).
 
 ## Rule files
 
