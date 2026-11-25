@@ -438,7 +438,10 @@ class TestQuestExample(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("build_release_under_test", build)
         br = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(br)
-        listed = br.example_files()   # the git listing that both release and trial builds use
+        try:
+            listed = br.example_files()   # the git listing that both release and trial builds use
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("not a git checkout (or no git), so there is no release build to test")
         self.assertIn("examples/example-quest.log", listed)
         self.assertIn("examples/example-quest.logrules.json", listed)
         with tempfile.TemporaryDirectory() as out:   # --out keeps the repo's own dist/ and build/ untouched
