@@ -5,6 +5,7 @@
   python -I build_release.py                 build dist/papyrus-log-check-<version>.zip (+ .sha256)
   python -I build_release.py --tag v0.2.0    the same, but first check that the tag matches the script's
                                              VERSION and that CHANGELOG.md has a dated entry for it
+  python -I build_release.py --out FOLDER    write dist/ and build/ under FOLDER instead (the tests use it)
 
 Also writes build/release-notes.md (the CHANGELOG entry), used as the GitHub release text.
 The zip holds one folder, papyrus-log-check-<version>/, with fixed file times, the same "made on"
@@ -41,17 +42,16 @@ def committed(rel):
     return git("show", f"HEAD:{rel}")
 
 
-def example_files(from_disk=False):
-    """Every file in the examples folder (0.4.3: the whole folder ships, not a hand list)."""
-    if from_disk:
-        folder = os.path.join(HERE, "examples")
-        return sorted("examples/" + n for n in os.listdir(folder) if os.path.isfile(os.path.join(folder, n)))
-    out = git("ls-tree", "-r", "--name-only", "HEAD", "--", "examples").decode("utf-8")
-    return sorted(line for line in out.splitlines() if line)
+def example_files():
+    """Every file git tracks in the examples folder (0.4.3: the whole folder ships, not a hand list).
+    One listing for both build modes, so a trial build (--allow-dirty) ships the same files as a release."""
+    out = git("-c", "core.quotePath=false", "ls-files", "-z", "--", "examples").decode("utf-8")
+    return sorted(n for n in out.split("\0") if n)
 
 
 def dirty_files():
-    out = git("status", "--porcelain", "--", *FILES, "examples").decode("utf-8", "replace")
+    # Untracked files never ship (example_files lists tracked files only), so they don't block a build.
+    out = git("status", "--porcelain", "--untracked-files=no", "--", *FILES, "examples").decode("utf-8", "replace")
     return [line[3:] for line in out.splitlines() if line.strip()]
 
 
@@ -78,6 +78,8 @@ def main():
     ap.add_argument("--tag", help="the git tag being released, e.g. v0.2.0")
     ap.add_argument("--allow-dirty", action="store_true",
                     help="build from the files on disk, uncommitted changes included (never for a release)")
+    ap.add_argument("--out", default=HERE,
+                    help="folder that gets dist/ and build/ (default: this script's folder)")
     args = ap.parse_args()
     if args.allow_dirty and args.tag:
         raise SystemExit("--allow-dirty can't be used with --tag: a release is built from the commit")
@@ -95,14 +97,14 @@ def main():
         if "not yet released" in heading.lower() or not re.search(r"\d{4}-\d\d-\d\d", heading):
             raise SystemExit(f"CHANGELOG.md entry for {version} needs a release date, e.g. '## {version} (2026-11-10)'")
 
-    dist = os.path.join(HERE, "dist")
-    build = os.path.join(HERE, "build")
+    dist = os.path.join(args.out, "dist")
+    build = os.path.join(args.out, "build")
     os.makedirs(dist, exist_ok=True)
     os.makedirs(build, exist_ok=True)
     top = f"papyrus-log-check-{version}"
     zpath = os.path.join(dist, top + ".zip")
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
-        for rel in sorted(FILES + example_files(args.allow_dirty)):
+        for rel in sorted(FILES + example_files()):
             if args.allow_dirty:
                 with open(os.path.join(HERE, rel), "rb") as f:
                     data = f.read()

@@ -438,17 +438,18 @@ class TestQuestExample(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("build_release_under_test", build)
         br = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(br)
-        disk = br.example_files(from_disk=True)
-        self.assertIn("examples/example-quest.log", disk)
-        self.assertIn("examples/example-quest.logrules.json", disk)
-        with tempfile.TemporaryDirectory() as out:
-            r = subprocess.run([sys.executable, "-I", build, "--allow-dirty"], capture_output=True, text=True,
-                               cwd=out)
+        listed = br.example_files()   # the git listing that both release and trial builds use
+        self.assertIn("examples/example-quest.log", listed)
+        self.assertIn("examples/example-quest.logrules.json", listed)
+        with tempfile.TemporaryDirectory() as out:   # --out keeps the repo's own dist/ and build/ untouched
+            r = subprocess.run([sys.executable, "-I", build, "--allow-dirty", "--out", out],
+                               capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
             zpath = r.stdout.splitlines()[0].strip()
+            self.assertTrue(os.path.abspath(zpath).startswith(os.path.abspath(out)), zpath)
             with zipfile.ZipFile(zpath) as z:
                 names = {n.split("/", 1)[1] for n in z.namelist()}
-        for rel in disk:
+        for rel in listed:
             self.assertIn(rel, names)
 
 

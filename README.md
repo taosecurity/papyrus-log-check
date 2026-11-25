@@ -246,7 +246,7 @@ With `--root`, a rule file that can't be read at all is skipped and listed as SK
 
 ## Check a quest's stages
 
-A quest mod can write one log line for each stage it sets, from its quest script or a stage fragment, such as `Debug.Trace("[TWE] stage 20: letter read")`. A rule file then proves which stages the tester reached, and the `order` rule proves that they came in the right order. [`examples/example-quest.logrules.json`](examples/example-quest.logrules.json) does this for a made-up mod, Tidewater Errand, whose quest has stages 10, 20 and 30, and [`examples/example-quest.log`](examples/example-quest.log) is a made-up log of one good run. Both are in the repository's `examples` folder. This is a real run on them:
+A quest mod can write one log line for each stage it sets, from its quest script or a stage fragment, such as `Debug.Trace("[TWE] stage 20: letter read")`. A rule file then proves which stages the tester reached, and the `order` rule proves that they came in the right order. [`examples/example-quest.logrules.json`](examples/example-quest.logrules.json) does this for a made-up mod, Tidewater Errand, whose quest has stages 10, 20 and 30, and [`examples/example-quest.log`](examples/example-quest.log) is a made-up log of one good run. Both are in the `examples` folder of the release zip and of the repository. This is a real run on them:
 
 ```
 > python papyrus_log_check.py examples\example-quest.log --rules examples\example-quest.logrules.json
@@ -277,7 +277,7 @@ If the tester never read the letter, the log has no stage 20 or stage 30 line, a
    NOT SEEN  order started > stage-10 > stage-20 > stage-30: not all seen: stage-20, stage-30
 ```
 
-To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --filter <name> --details`.
+To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `names`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --filter <name> --details`.
 
 ## Rule files
 
