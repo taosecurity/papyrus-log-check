@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.3 (not yet released)
+
+### What's new
+
+The release zip now holds the quest-stage example, `examples/example-quest.log` and `examples/example-quest.logrules.json`, which the README's "Check a quest's stages" section describes. They were in the repository but left out of the zip, because the build listed example files by hand. The build now takes the whole `examples` folder, and a test checks that every example file is in the zip. There are no changes to how the tool checks logs.
+
+### Example
+
+Unpack the zip and run the quest example from the unpacked folder:
+
+    > python papyrus_log_check.py examples\example-quest.log --rules examples\example-quest.logrules.json
+    papyrus-log-check 0.4.3 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    example-quest.log
+      PASS       Tidewater Errand 1.0.0
+
 ## 0.4.2 (2026-11-22)
 
 ### What's new

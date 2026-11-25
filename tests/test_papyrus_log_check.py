@@ -4,6 +4,7 @@
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -410,6 +411,45 @@ class TestExample(unittest.TestCase):
         m = data["mods"][0]
         self.assertEqual(m["status"], plc.NOT_SEEN)
         self.assertEqual(m["explain_found"], 2)
+
+
+class TestQuestExample(unittest.TestCase):
+    """0.4.3: examples\\example-quest.* (README "Check a quest's stages") run and pass, and the release zip holds them."""
+
+    def test_quest_example_passes_with_all_stages_in_order(self):
+        ex = os.path.join(os.path.dirname(HERE), "examples")
+        with tempfile.TemporaryDirectory() as out:
+            code = plc.main([os.path.join(ex, "example-quest.log"), "--rules",
+                             os.path.join(ex, "example-quest.logrules.json"), "--out", out])
+            js = [f for f in os.listdir(out) if f.endswith(".json")][0]
+            data = json.loads(read(os.path.join(out, js)))
+        self.assertEqual(code, 0)
+        m = data["mods"][0]
+        self.assertEqual(m["status"], plc.PASS)
+        statuses = [x["status"] for x in m["rules"] if x["id"].startswith("stage-")]
+        self.assertEqual(statuses, [plc.PASS] * 3)
+
+    def test_release_zip_holds_every_example_file(self):
+        build = os.path.join(os.path.dirname(HERE), "build_release.py")
+        if not os.path.isfile(build):
+            self.skipTest("build_release.py is public-only")
+        import importlib.util
+        import zipfile
+        spec = importlib.util.spec_from_file_location("build_release_under_test", build)
+        br = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(br)
+        disk = br.example_files(from_disk=True)
+        self.assertIn("examples/example-quest.log", disk)
+        self.assertIn("examples/example-quest.logrules.json", disk)
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run([sys.executable, "-I", build, "--allow-dirty"], capture_output=True, text=True,
+                               cwd=out)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            zpath = r.stdout.splitlines()[0].strip()
+            with zipfile.ZipFile(zpath) as z:
+                names = {n.split("/", 1)[1] for n in z.namelist()}
+        for rel in disk:
+            self.assertIn(rel, names)
 
 
 class TestStarterExample(unittest.TestCase):

@@ -39,7 +39,7 @@ _WINDOWS = os.name == "nt"  # Windows-only advice (the 260-character path limit)
 import zlib
 
 TOOL = "papyrus-log-check"
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"

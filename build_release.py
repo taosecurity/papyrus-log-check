@@ -25,8 +25,6 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = [
     "papyrus_log_check.py", "README.md", "AGENTS.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
-    "examples/example-beacon.logrules.json", "examples/Papyrus.0.log", "examples/starter-mymod.logrules.json",
-    "examples/starter-pack-sample.log", "examples/example-quiet.logrules.json",
     "rules/papyrus-runtime-errors.logrules.json", "rules/papyrus-scripts-and-properties.logrules.json",
     "rules/papyrus-saves-and-load.logrules.json",
     "tests/test_papyrus_log_check.py",
@@ -43,8 +41,17 @@ def committed(rel):
     return git("show", f"HEAD:{rel}")
 
 
+def example_files(from_disk=False):
+    """Every file in the examples folder (0.4.3: the whole folder ships, not a hand list)."""
+    if from_disk:
+        folder = os.path.join(HERE, "examples")
+        return sorted("examples/" + n for n in os.listdir(folder) if os.path.isfile(os.path.join(folder, n)))
+    out = git("ls-tree", "-r", "--name-only", "HEAD", "--", "examples").decode("utf-8")
+    return sorted(line for line in out.splitlines() if line)
+
+
 def dirty_files():
-    out = git("status", "--porcelain", "--", *FILES).decode("utf-8", "replace")
+    out = git("status", "--porcelain", "--", *FILES, "examples").decode("utf-8", "replace")
     return [line[3:] for line in out.splitlines() if line.strip()]
 
 
@@ -95,7 +102,7 @@ def main():
     top = f"papyrus-log-check-{version}"
     zpath = os.path.join(dist, top + ".zip")
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
-        for rel in sorted(FILES):
+        for rel in sorted(FILES + example_files(args.allow_dirty)):
             if args.allow_dirty:
                 with open(os.path.join(HERE, rel), "rb") as f:
                     data = f.read()
