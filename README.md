@@ -230,7 +230,7 @@ logcheck-20261109-095824-run20261120-220538.json  the same data for other tools
 
 The exit code tells scripts what happened:
 
-- 0 means no rule failed.
+- 0 means no rule failed. `--help` and `--version` also exit with 0, after printing the usage or the version.
 - 1 means at least one rule failed.
 - 2 means the arguments were wrong, a rule file was bad, the input couldn't be read, or the report couldn't be written.
 
