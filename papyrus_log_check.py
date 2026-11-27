@@ -115,9 +115,14 @@ class Log:
         """Opens the log file, refusing one that would overwrite an input (a Papyrus log, the zip, a rule file)."""
         full = os.path.abspath(path)
         base = os.path.basename(full).lower()
+
+        def same(p):  # resolved and case-folded, so another letter case or a link can't name the same file
+            return os.path.normcase(os.path.realpath(p))
+        full_n = same(full)
         for i in inputs:
             i = os.path.abspath(i)
-            if full == i or (os.path.isdir(i) and full.startswith(os.path.join(i, ""))):
+            i_n = same(i)
+            if full_n == i_n or (os.path.isdir(i) and full_n.startswith(os.path.join(i_n, ""))):
                 raise ValueError(f"--log {path} is inside the input {i}; give the log a place of its own, e.g. --log papyrus-log-check.log.txt")
         if PAPYRUS_RE.search(base) or base.endswith((".zip", ".json", ".esm", ".esp", ".esl")):
             raise ValueError(f"--log {path} looks like an input file; give it a .txt name, e.g. --log papyrus-log-check.log.txt")
@@ -1003,7 +1008,8 @@ def text_report(data, max_lines):
             out.append("   Lines read: none. No line matched this rule file's prefix.")
         else:
             out.append("   Mod log lines: none. The mod never logged, so its features were probably not tested, or logging is off.")
-            if r["rules"] and all(x["status"] == NOT_SEEN for x in r["rules"]):
+            if (r["rules"] and all(x["status"] == NOT_SEEN for x in r["rules"])
+                    and not any(x.get("warnings") for x in r["rules"])):
                 out.append(f"   All {len(r['rules'])} rules are NOT SEEN, and its scripts logged no errors.")
                 out.append("")
                 continue

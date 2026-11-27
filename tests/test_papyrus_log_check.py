@@ -2181,6 +2181,35 @@ class TestReviewS3042(Base):
         self.assertEqual(len(os.listdir(out)), 2)
 
 
+class TestRound3044(Base):
+    """Round 3 fixes for 0.4.4 (C6, C2): made-up logs only."""
+
+    def test_c6_own_script_warnings_shown_when_mod_never_logged(self):
+        log = ("[10:00:00] Papyrus log opened (PC-64)\n"
+               "[10:00:01] warning: Property Foo on script TEST_Quest attached to Quest (FF000801) cannot be initialized\n"
+               "[10:00:02] warning: Property Foo on script TEST_Quest attached to Quest (FF000801) cannot be initialized\n")
+        folder = os.path.join(self.dir, "logs")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "Papyrus.0.log"), "w", encoding="utf-8") as f:
+            f.write(log)
+        rules = dict(RULES, order=[], forbid=[], expect=[{"id": "x", "re": "TEST: hello"}])
+        write_rules(self.root, "TestMod", rules)
+        plc.main([folder, "--root", self.root, "--out", self.out])
+        txt = read(os.path.join(self.out, [n for n in sorted(os.listdir(self.out)) if n.endswith(".txt")][0]))
+        self.assertIn("never logged", txt)
+        self.assertIn("2 warning(s)", txt)
+        self.assertNotIn("logged no errors", txt)
+
+    def test_c2_log_in_other_letter_case_is_refused(self):
+        inp = os.path.join(self.dir, "mylog.txt")
+        with open(inp, "w", encoding="utf-8") as f:
+            f.write("keep me")
+        other = os.path.join(self.dir, "MYLOG.TXT" if os.name == "nt" else "mylog.txt")
+        with self.assertRaises(ValueError):
+            plc.Log.open(other, [inp])
+        self.assertEqual(read(inp), "keep me")
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 
