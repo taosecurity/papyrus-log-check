@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.4 (unreleased)
+
+### What's new
+
+This is a fix release with no new features. When a mod never logged, the text report no longer says "its scripts logged no errors" and hides the Papyrus warnings on the mod's own scripts: it says the mod never logged and still lists those warnings. On Windows, `--log` now refuses a path that names an input file in other letter case (it used to overwrite the input). A line break inside a manifest value or a zip entry name can no longer add made-up lines to the report. A rule's `"always": "false"` in quotes is now refused with a clear message (it used to count as true). A regex with a quantifier right after `{version}` and a JSON file nested very deeply no longer end in a traceback. The unused `zlib` import is gone.
+
+### Example
+
+A rule file that writes `"always"` in quotes is refused, and the message says what to change (exit code 2):
+
+    > python papyrus_log_check.py examples\example-quest.log --rules bad.logrules.json
+    papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    papyrus-log-check: bad.logrules.json: expect rule 'started' has 'always' 'true'; it should be true or false without quotes.
+
 ## 0.4.3 (2026-11-25)
 
 ### What's new

@@ -36,10 +36,9 @@ import traceback
 import zipfile
 
 _WINDOWS = os.name == "nt"  # Windows-only advice (the 260-character path limit)
-import zlib
 
 TOOL = "papyrus-log-check"
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 # Attribution (the author's request, 2026-11-11): in the report's first line, --version and the JSON.
 AUTHOR = "Richard Bejtlich"
 LICENSE_NAME = "MIT"
@@ -75,6 +74,16 @@ ZIP, FOLDER, LOG_FILE = "zip", "folder", "log file"
 IGNORED = object()  # 0.4.1: a manifest listing that was there but had the wrong shape (says nothing, like an empty one)
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+_LINEBREAK_RE = re.compile("[\n\r\u2028\u2029]")
+_BREAK_NAMES = {"\n": "\\n", "\r": "\\r", "\u2028": "\\u2028", "\u2029": "\\u2029"}
+
+
+def one_line(text):
+    """0.4.4 (C1): safe() text with line breaks shown as \\n, so a line break inside a manifest value or a zip entry
+    name can't start a made-up line in the report or the summary."""
+    return _LINEBREAK_RE.sub(lambda m: _BREAK_NAMES[m.group(0)], safe(text))
 
 
 def safe(text):
@@ -331,7 +340,7 @@ class Package:
         text = self.text(name)  # outside the try: a zip entry that can't be read stops the run (exit 2), it isn't "no JSON"
         try:
             return json.loads(text)
-        except ValueError:
+        except (ValueError, RecursionError):  # 0.4.4 (C5): JSON nested too deeply is bad JSON
             return None
 
     def _collector_manifest(self):
@@ -497,6 +506,8 @@ def load_rules(path):
         except UnicodeDecodeError as e:
             raise ValueError(f"{path} is not UTF-8 text ({e.reason} at byte {e.start}). Save it as UTF-8 (a UTF-16 file from Notepad's "
                              f"Unicode option won't do).")
+        except RecursionError:
+            raise ValueError(f"{path} is not valid JSON (nested too deeply). Check its brackets.")
         except ValueError as e:
             raise ValueError(f"{path} is not valid JSON ({e}). Check its commas and quotes.")
     if not isinstance(r, dict):
@@ -558,6 +569,8 @@ def check_shape(r):
                         raise ValueError(f"{path}: forbid rule '{e['id']}' has '{key}', which only expect rules use "
                                          f"(a forbid rule fails on any matching line). Remove '{key}' from it, "
                                          f"or make it an expect rule.")
+            if kind == "expect" and "always" in e and type(e["always"]) is not bool:  # 0.4.4 (C4): "false" in quotes counted as true
+                raise ValueError(f"{path}: expect rule '{e['id']}' has 'always' {e['always']!r}; it should be true or false without quotes.")
             if "min" in e and (not isinstance(e["min"], int) or e["min"] < 1):
                 raise ValueError(f"{path}: {kind} rule '{e['id']}' has 'min' {e['min']!r}; it should be a whole number, 1 or more.")
     if not isinstance(r["order"], list) or not all(isinstance(q, list) and all(isinstance(x, str) for x in q) for q in r["order"]):
@@ -817,8 +830,11 @@ def check_mod(rules, pkg, blocks, keep=50):
             first_pos[e["id"]] = (hits[0][0], hits[0][1])
         other_version = []
         if not hits and "{version}" in e["re"]:  # seen with another version = wrong build installed?
-            any_rx = re.compile(e["re"].replace("{version}", r"[0-9][\w.\-]*"))
-            other_version = [ref(src, i, n, t) for i, n, t in all_lines(src) if any_rx.search(t)][:keep]
+            try:
+                any_rx = re.compile(e["re"].replace("{version}", r"[0-9][\w.\-]*"))
+            except re.error:  # 0.4.4 (C3): e.g. a quantifier right after {version}; skip the other-version search
+                any_rx = None
+            other_version = [ref(src, i, n, t) for i, n, t in all_lines(src) if any_rx.search(t)][:keep] if any_rx else []
         res["rules"].append({"kind": "expect", "id": e["id"], "status": status, "min": need,
                              "always": bool(e.get("always")), "count": len(hits),
                              "pattern": fill(e["re"], rules), "means": e.get("means", ""),
@@ -1070,7 +1086,7 @@ def text_report(data, max_lines):
     out.append("was seen, lines are out of order, or a Papyrus error names the mod's scripts. NOT SEEN means no")
     out.append("line matched, which usually means the feature wasn't tested. FOUND means an explain rule matched: the")
     out.append("lines are worth reading, but they don't fail the mod. This report helps you read the logs; it is not a verdict.")
-    return "\n".join(safe(line) for line in out) + "\n"
+    return "\n".join(one_line(line) for line in out) + "\n"
 
 
 # ----------------------------------------------------------------------------- main
@@ -1293,15 +1309,15 @@ def _run(args, opened):
                          f"another folder.{saved}")
     Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
 
-    print(safe(pkg.name))
+    print(one_line(pkg.name))
     for r in results:
-        print(safe(f"  {shown_status(r):<10} {r['mod']} {r['version']}"))
+        print(one_line(f"  {shown_status(r):<10} {r['mod']} {r['version']}"))
     for n in not_loaded:
-        print(safe(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
+        print(one_line(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
     for e in rule_errors:
-        print(safe(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
+        print(one_line(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
     for fl in flags:
-        print(safe(f"  FLAG       {fl['kind']}: {fl['text'][:120]}"))
+        print(one_line(f"  FLAG       {fl['kind']}: {fl['text'][:120]}"))
     print(f"Report: {base}.txt")
     print(f"JSON:   {base}.json")
     return 1 if data["overall"] == FAIL else 0

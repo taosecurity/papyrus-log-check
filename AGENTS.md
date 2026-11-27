@@ -1,7 +1,7 @@
 # AGENTS.md: papyrus-log-check for AI assistants
 
 Plain steps for an AI assistant helping someone use papyrus-log-check. Every command here was run once on
-papyrus-log-check 0.4.3 before release. The [README](README.md) has the full description.
+papyrus-log-check 0.4.4 before release. The [README](README.md) has the full description.
 
 ## 1. What it is for
 
@@ -22,12 +22,12 @@ it to judge whether a mod is "good": its report is a reading aid, not a verdict.
 
 ## 3. Install
 
-Download `papyrus-log-check-0.4.3.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
+Download `papyrus-log-check-0.4.4.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
 against the `.sha256` file:
 
-    certutil -hashfile papyrus-log-check-0.4.3.zip SHA256
+    certutil -hashfile papyrus-log-check-0.4.4.zip SHA256
 
-Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.4.3.zip.sha256` checks it.
+Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.4.4.zip.sha256` checks it.
 
 ## 4. Prove the install works
 
@@ -89,7 +89,7 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   The example log is from another mod, so a good copy shows `NOT SEEN` with exit code 0.
   `examples/Papyrus.0.log --rules examples/example-quiet.logrules.json` shows the case where such a mod's explain
   rules still matched: it prints `NOT SEEN (2 found) Example Quiet 0.2.0` and exits with code 0.
-  `min` and `always` belong to expect rules only: on a forbid rule either one is a bad field (exit 2), and on an
+  `always` must be true or false without quotes (text like "false" is refused, exit 2). `min` and `always` belong to expect rules only: on a forbid rule either one is a bad field (exit 2), and on an
   explain rule only `"min": 1` and `"always": false` are accepted (they change nothing).
 
 - Troubleshoot a run: add `--verbose` (log on stderr) or `--log papyrus-log-check.log.txt` (log to a file).

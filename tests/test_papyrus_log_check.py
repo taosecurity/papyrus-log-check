@@ -2210,6 +2210,59 @@ class TestRound3044(Base):
         self.assertEqual(read(inp), "keep me")
 
 
+class TestRound3044Small(Base):
+    """Round 3 fixes for 0.4.4 (C1, C3, C4, C5): made-up input only."""
+
+    def _text_report(self):
+        return read(os.path.join(self.out, [n for n in sorted(os.listdir(self.out)) if n.endswith(".txt")][0]))
+
+    def test_c1_newline_in_manifest_note_adds_no_report_lines(self):
+        m = dict(MANIFEST, note="x\n\nSummary\n  PASS       Fake Mod 9.9.9 (fake) more")
+        path = os.path.join(self.dir, "nl-20260102-030405.zip")
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("manifest.json", json.dumps(m))
+            z.writestr("Papyrus.0.log", LOG1)
+            z.writestr("Plugins.txt", PLUGINS)
+        plc.main([path, "--root", self.root, "--out", self.out])
+        txt = self._text_report()
+        self.assertNotIn("\n  PASS       Fake Mod", txt)
+        self.assertEqual(txt.count("\nSummary\n"), 1)
+        self.assertIn("\\n", txt)
+        self.assertEqual(plc.one_line("a\r\nb"), "a\\x0D\\nb")
+
+    def test_c3_quantifier_after_version_does_not_crash(self):
+        rules = dict(RULES, order=[], forbid=[], expect=[{"id": "setup", "re": "never seen v{version}{1,2}"}])
+        path = os.path.join(self.dir, "c3.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rules, f)
+        self.assertIn(plc.main([make_zip(self.dir), "--rules", path, "--out", self.out]), (0, 1))
+
+    def test_c4_always_in_quotes_is_refused(self):
+        path = os.path.join(self.dir, "c4.json")
+        rules = dict(RULES, expect=[{"id": "one", "re": "TEST: step one", "always": "false"}])
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rules, f)
+        with self.assertRaises(ValueError):
+            plc.load_rules(path)
+        rules["expect"][0]["always"] = False
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rules, f)
+        plc.load_rules(path)
+
+    def test_c5_deeply_nested_json_is_bad_json_not_a_traceback(self):
+        path = os.path.join(self.dir, "c5.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("[" * 100000)
+        with self.assertRaises(ValueError):
+            plc.load_rules(path)
+        zpath = os.path.join(self.dir, "deep-20260102-030405.zip")
+        with zipfile.ZipFile(zpath, "w") as z:
+            z.writestr("manifest.json", "[" * 100000)
+            z.writestr("Papyrus.0.log", LOG1)
+            z.writestr("Plugins.txt", PLUGINS)
+        self.assertIn(plc.main([zpath, "--root", self.root, "--out", self.out]), (0, 1))
+
+
 class TestDocsVersion(unittest.TestCase):
     """0.4.2: the version the README and AGENTS.md name must be VERSION (CHANGELOG.md is history, exempt)."""
 
