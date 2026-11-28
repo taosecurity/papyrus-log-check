@@ -16,7 +16,7 @@ The release zip holds a made-up log and a rule file for a made-up mod called Exa
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   PASS       Example Beacon 1.0.0
 Report: ...\out\logcheck-20261109-095824-run20261120-220538.txt
@@ -53,7 +53,7 @@ python papyrus_log_check.py "C:\Users\<you>\Documents\My Games\Starfield\Logs\Sc
 The tool is one Python script that uses only Python's standard library, so there is nothing else to install. It needs Python 3.9 or newer and works on Windows and Linux (for example, on logs copied from a Steam Deck). It only reads: it never changes the logs or the rule files.
 
 1. Install Python 3.9 or newer (the newest version is a good choice) from [python.org](https://www.python.org/downloads/). On the first screen of the installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type `python --version`. It should print a version number.
-2. Download `papyrus-log-check-0.4.4.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
+2. Download `papyrus-log-check-0.5.0.zip` from [Releases](https://github.com/taosecurity/papyrus-log-check/releases) and unpack it anywhere.
 3. Open the unpacked folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A Command Prompt window opens in that folder, ready for the commands in this README.
 4. Run the example command at the top of this page. It should print `PASS       Example Beacon 1.0.0`.
 
@@ -103,7 +103,7 @@ The release zip has a made-up log, `examples\starter-pack-sample.log`, with one 
 
 ```
 > python papyrus_log_check.py examples\starter-pack-sample.log --rules rules\papyrus-runtime-errors.logrules.json --rules rules\papyrus-scripts-and-properties.logrules.json --rules rules\papyrus-saves-and-load.logrules.json
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 starter-pack-sample.log
   FOUND      Papyrus runtime errors 1.0.0
   FOUND      Papyrus saves and engine load 1.0.0
@@ -173,7 +173,7 @@ Copy it, change `mod`, `version`, `plugins`, `prefix` and the patterns to your o
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\starter-mymod.logrules.json
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   NOT SEEN   My Mod 0.1.0
 Report: ...\out\logcheck-20261109-095824-run20261120-220538-2.txt
@@ -203,6 +203,7 @@ A folder or zip may also hold these files:
 python papyrus_log_check.py INPUT --rules FILE [--rules FILE ...]
 python papyrus_log_check.py INPUT --root FOLDER [--mods A,B]
 python papyrus_log_check.py --logs-dir FOLDER --rules FILE
+python papyrus_log_check.py --logs-dir FOLDER --prefix TEXT [--scripts TEXT] [--since DATE] [--until DATE]
 ```
 
 | Option | What it does |
@@ -213,10 +214,13 @@ python papyrus_log_check.py --logs-dir FOLDER --rules FILE
 | `--mods A,B` | With `--root`, this checks only the project folders you name. |
 | `--logs-dir FOLDER` | When no INPUT is given, this checks the newest `.zip` in the folder. "Newest" goes by the `yyyymmdd-hhmmss` stamp in the file name, or else by file time. The environment variable `PAPYRUS_LOG_CHECK_LOGS` does the same. |
 | `--out FOLDER` | This sets where the reports go. The default is `out\` next to the script. |
-| `--max-lines N` | This sets how many matching lines the text report shows per rule. The default is 5, and the JSON report keeps up to 50. |
+| `--max-lines N` | This sets how many matching lines the text report shows per rule. The default is 5, and the JSON report keeps up to 50. In the prefix mode it sets how many lines the text report shows per zip (default: all), and the JSON always holds every line. |
 | `--set-version MyMod=0.9.1` | This checks a mod as another version than its rule file says (give the mod name or project folder). It is for rechecking older logs, and you can repeat it. When the log was written by yet another version, a rule with `{version}` FAILs, and the report shows the version the log has. |
 | `--verbose` | This prints a troubleshooting log on stderr (see below). |
 | `--log FILE` | This writes the same troubleshooting log to FILE, for example `--log papyrus-log-check.log.txt`. |
+| `--prefix TEXT` | This turns on the prefix mode (see "Search all the test logs for one mod"). It lists every line that holds TEXT, in any letter case, across the zips in `--logs-dir`. Repeat it for more prefixes. |
+| `--scripts TEXT` | This turns on the prefix mode for a mod's scripts: TEXT is the start of their names, such as `TIDE_`. You can use it with `--prefix`. |
+| `--since YYYY-MM-DD`, `--until YYYY-MM-DD` | In the prefix mode, these leave out zips made before or after that day. Both days are included. |
 | `--version` | This prints the version and license, then exits. |
 
 When a rule with `{version}` finds nothing, the report also shows the same line logged with any other version. That usually means a different build was installed.
@@ -250,7 +254,7 @@ A quest mod can write one log line for each stage it sets, from its quest script
 
 ```
 > python papyrus_log_check.py examples\example-quest.log --rules examples\example-quest.logrules.json
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 example-quest.log
   PASS       Tidewater Errand 1.0.0
 Report: ...\out\logcheck-20261124-123228-run20261124-123230.txt
@@ -278,6 +282,43 @@ If the tester never read the letter, the log has no stage 20 or stage 30 line, a
 ```
 
 To write a rule for your own quest, copy the two example files, change `mod`, `version`, `plugins`, `names`, `prefix` and `scripts`, and write one `expect` rule for each stage line, using the exact text your script logs. List the stage ids in `order` in the sequence the stages must come. Add a `forbid` rule for a line your script writes when something goes wrong, such as a stage set out of order. The log only proves what the mod wrote. To see the stages the save itself holds, use `sf-save-reader quests <save> --data <Data folder> --filter <name> --details` ([sf-save-reader](https://github.com/taosecurity/sf-save-reader), a separate tool).
+
+## Search all the test logs for one mod
+
+The prefix mode answers "what did my mod write, across all my test runs?". It lists every line that holds one mod's prefix, or that a script of the mod wrote, from every log zip in a folder (the zips your log collector makes), and it can leave out zips by date. It reads no rule file.
+
+```
+python papyrus_log_check.py --logs-dir FOLDER --prefix TEXT [--prefix TEXT ...] [--scripts TEXT ...] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+```
+
+- `--prefix TEXT` is plain text, in any letter case, such as `[TIDE]`. Repeat it for more than one prefix.
+- `--scripts TEXT` is the start of the mod's script names, such as `TIDE_`. A Papyrus error that names one of those scripts is shown whole, with its `stack:` line. You can use `--prefix` and `--scripts` together.
+- `--logs-dir FOLDER` (or the environment variable `PAPYRUS_LOG_CHECK_LOGS`) is the folder whose `.zip` files are searched, oldest first. Zips in subfolders are not read. You can give one zip, folder or log as INPUT instead; then there is no date range.
+- `--since` and `--until` pick zips by the day they were made, both days included. A zip's day comes from the `yyyymmdd-hhmmss` stamp in its name, or else the collector's manifest, or else the file time. `--verbose` says which one was used.
+- `--max-lines N` shows only the first N lines per zip in the text report. The JSON report always holds every line.
+
+This run searches three made-up collector zips for the made-up mod Tidewater Errand. The third zip is dated 2026-11-25, so the range leaves it out:
+
+```
+> python papyrus_log_check.py --logs-dir D:\TestLogs --prefix "[TIDE]" --scripts TIDE_ --since 2026-11-20 --until 2026-11-23
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+prefix mode: D:\TestLogs, 2026-11-20 to 2026-11-23
+  StarfieldLogs-20261120-101500.zip  1 lines
+  StarfieldLogs-20261122-190000.zip  2 lines
+Report: out\prefix-run20261127-213521.txt
+JSON:   out\prefix-run20261127-213521.json
+RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 0 errors), 1 left out by date
+```
+
+The text report puts one line under each zip heading: the zip, the log and its line number, and the text.
+
+```
+StarfieldLogs-20261120-101500.zip  Papyrus.0.log:2  [11/20/2026 - 10:15:09AM] info: [TIDE] quest started
+StarfieldLogs-20261122-190000.zip  Papyrus.0.log:1  [11/22/2026 - 07:00:03PM] info: [TIDE] stage 20: letter read
+StarfieldLogs-20261122-190000.zip  Papyrus.0.log:2  [11/22/2026 - 07:00:05PM] error: Cannot open store for class "TIDE_LetterScript", missing file?
+```
+
+The exit code is 0 when at least one line was found, 1 when none was (a mod that never logged, or a range that holds no zips), and 2 for a refusal such as a bad date or `--prefix` together with `--rules`. A zip that can't be read is listed as SKIPPED with the reason, and the run goes on. The last line on stdout is always the `RESULT:` line, so a script can read it.
 
 ## Rule files
 
@@ -346,7 +387,7 @@ For example, [`examples/example-quiet.logrules.json`](examples/example-quiet.log
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-quiet.logrules.json
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
 Papyrus.0.log
   NOT SEEN (2 found) Example Quiet 0.2.0
 Report: ...\out\logcheck-20261109-095824-run20261122-191459.txt
@@ -379,8 +420,8 @@ The log says what was read (the input, how many logs, plugins.txt, the manifest)
 
 ```
 > python papyrus_log_check.py examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
-papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
-log: papyrus-log-check 0.4.4 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
+papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+log: papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check; Python 3.13.15 on win32
 log: arguments: examples\Papyrus.0.log --rules examples\example-beacon.logrules.json --verbose
 log: input: log file examples\Papyrus.0.log: 1 files, 1 Papyrus log(s), plugins.txt none, manifest none
 log: rule file examples\example-beacon.logrules.json: mod Example Beacon 1.0.0, 3 expect, 1 forbid, 1 order, 0 explain rule(s)
@@ -389,6 +430,20 @@ log: Example Beacon: PASS (plugin unknown, 2 mod log line(s))
 log: wrote ...\out\logcheck-20261109-095824-run20261120-220538-3.txt and ...\out\logcheck-20261109-095824-run20261120-220538-3.json; overall OK
 ...
 ```
+
+## Known limits
+
+These are known and left as they are. None of them changes a result in normal use.
+
+- The prefix mode's date range picks whole zips by their date. A Papyrus line carries only a time of day, so lines can't be filtered by day. When the collector packed the same log in two zips, its lines show under both.
+- `--prefix` and `--scripts` are plain text. There is no regex form, and the prefix mode doesn't read a mod's rule file for its prefix.
+- Hidden text characters in a name are not escaped: bidi marks (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F), zero-width characters and U+FEFF. A name that holds one can reorder or hide text on its own line in the report, but it can't add a line.
+- On stderr, an error message escapes control characters but does not join a line break inside a zip entry name, so a made-up entry name can add a line to an error message. The report and stdout don't have this.
+- The `--log` check that the file isn't an input compares real paths in the letter case of the system. On a case-insensitive Linux or macOS drive, or with a hard link, it can miss that `--log` names an input.
+- Two Papyrus logs with the same name in different subfolders show under one name, and their counts are added. A collector zip or a game log folder holds one log of each name.
+- A negative `--max-lines` in the normal mode is accepted and shows fewer lines. `"min": true` in a rule counts as a minimum of 1.
+- A `manifest.json` nested about 990 levels deep stops the run with exit code 2 and "This is a bug". No collector writes such a file.
+- A quantifier right after `{version}` in a rule skips the search for the same line with another version, without a message.
 
 ## Privacy
 

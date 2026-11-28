@@ -1,7 +1,7 @@
 # AGENTS.md: papyrus-log-check for AI assistants
 
 Plain steps for an AI assistant helping someone use papyrus-log-check. Every command here was run once on
-papyrus-log-check 0.4.4 before release. The [README](README.md) has the full description.
+papyrus-log-check 0.5.0 before release. The [README](README.md) has the full description.
 
 ## 1. What it is for
 
@@ -22,12 +22,12 @@ it to judge whether a mod is "good": its report is a reading aid, not a verdict.
 
 ## 3. Install
 
-Download `papyrus-log-check-0.4.4.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
+Download `papyrus-log-check-0.5.0.zip` from https://github.com/taosecurity/papyrus-log-check/releases and check it
 against the `.sha256` file:
 
-    certutil -hashfile papyrus-log-check-0.4.4.zip SHA256
+    certutil -hashfile papyrus-log-check-0.5.0.zip SHA256
 
-Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.4.4.zip.sha256` checks it.
+Unpack it anywhere. On Linux, `sha256sum -c papyrus-log-check-0.5.0.zip.sha256` checks it.
 
 ## 4. Prove the install works
 
@@ -92,6 +92,17 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   `always` must be true or false without quotes (text like "false" is refused, exit 2). `min` and `always` belong to expect rules only: on a forbid rule either one is a bad field (exit 2), and on an
   explain rule only `"min": 1` and `"always": false` are accepted (they change nothing).
 
+- Find what one mod wrote across many test runs (the prefix mode: every line that holds a prefix, or that the
+  mod's scripts wrote, in every collector zip of a folder, optionally between two days):
+
+      python -I papyrus_log_check.py --logs-dir "<folder of zips>" --prefix "[MyMod]" --scripts MyMod_ --since 2026-11-20 --until 2026-11-23
+
+  `--prefix` and `--scripts` are plain text in any letter case, and repeatable. The mode reads no rule file:
+  with `--rules`, `--mods`, `--root` or `--set-version` it exits 2. The last stdout line is `RESULT: FOUND, ...`
+  (exit code 0) or `RESULT: NONE, ...` (exit code 1, no line found, or no zip in the range). A zip that can't be
+  read is listed as `SKIPPED` and the run goes on. The range picks zips by their date, not lines.
+  Reports are `prefix-run<stamp>.txt` and `.json` in `--out`.
+
 - Troubleshoot a run: add `--verbose` (log on stderr) or `--log papyrus-log-check.log.txt` (log to a file).
 
 ## 6. Inputs, outputs, exit codes, log
@@ -107,6 +118,7 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   The JSON lists checked mods in `mods` and, with `--root`, the unchecked ones in `not_loaded`. Each NOT LOADED
   entry (in either list) has `not_loaded_reason`, a sentence that names what was checked (plugins.txt, the SFSE
   plugin DLL list, or both).
+- **Prefix mode output:** see the task above: `prefix-run<run stamp>.txt` and `.json` in `--out`, and a last stdout line that starts `RESULT:`.
 - **Exit codes:** 0 = no rule failed (FOUND counts as no failure), and `--help` (usage) and `--version`; 1 = at least one FAIL; 2 = bad arguments, a bad
   rule file (the message names the file and the field), a rule file that isn't UTF-8, a `--root`, `--logs-dir` or
   `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read

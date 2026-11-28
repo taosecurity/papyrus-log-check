@@ -4,10 +4,30 @@
 
 ### What's new
 
+- A new prefix mode lists every line one mod's prefix or scripts wrote, across all the collector zips in a folder, and can leave out zips by date. Use `--prefix TEXT` (plain text, any letter case, repeatable), `--scripts TEXT` (the start of the mod's script names), `--since` and `--until` (`YYYY-MM-DD`, both days included) with `--logs-dir`. It writes `prefix-run<stamp>.txt` and `.json`, ends stdout with a `RESULT:` line, exits 0 when a line was found and 1 when none was, and lists a zip it can't read as SKIPPED instead of stopping. The README has a new "Known limits" section.
 - With no plugins.txt, the report now says the checks on `.esm` plugins are skipped. It used to say every rule file is checked.
 - A rule's `"always": null` is refused with the same message as `"always": "false"` (exit code 2): `always` must be true or false without quotes.
 - `--log` now refuses more names that are not a log: a file name ending in `.ba2`, `.pex`, `.psc`, `.dll`, `.7z`, `.rar` or a strings file type, a name with trailing dots or spaces after such an ending, a name with a colon (an NTFS data stream), and a folder (the message names `--log`). It used to write over those or fail with a bare "Permission denied".
 - The shared test cases of the PMT (output paths, damaged input files, terminal text) now run in the tests and in CI.
+
+### Example
+
+A search of three made-up collector zips for the made-up mod Tidewater Errand, from 2026-11-20 to 2026-11-23 (the third zip, dated 2026-11-25, is left out):
+
+    > python papyrus_log_check.py --logs-dir D:\TestLogs --prefix "[TIDE]" --scripts TIDE_ --since 2026-11-20 --until 2026-11-23
+    papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecurity/papyrus-log-check
+    prefix mode: D:\TestLogs, 2026-11-20 to 2026-11-23
+      StarfieldLogs-20261120-101500.zip  1 lines
+      StarfieldLogs-20261122-190000.zip  2 lines
+    Report: out\prefix-run20261127-213521.txt
+    JSON:   out\prefix-run20261127-213521.json
+    RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 0 errors), 1 left out by date
+
+The text report holds one line per match:
+
+    StarfieldLogs-20261120-101500.zip  Papyrus.0.log:2  [11/20/2026 - 10:15:09AM] info: [TIDE] quest started
+    StarfieldLogs-20261122-190000.zip  Papyrus.0.log:1  [11/22/2026 - 07:00:03PM] info: [TIDE] stage 20: letter read
+    StarfieldLogs-20261122-190000.zip  Papyrus.0.log:2  [11/22/2026 - 07:00:05PM] error: Cannot open store for class "TIDE_LetterScript", missing file?
 
 ## 0.4.4 (2026-11-27)
 

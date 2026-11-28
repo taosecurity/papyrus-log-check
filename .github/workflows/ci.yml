@@ -78,11 +78,26 @@ jobs:
       - name: Check the checksum
         working-directory: dist
         run: sha256sum -c ./*.sha256
-      - name: Publish the GitHub release
+      - name: Publish the GitHub release (safe to rerun, never replaces a file)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256
-          --title "papyrus-log-check ${GITHUB_REF_NAME#v}"
-          --notes-file build/release-notes.md
-          --verify-tag
+        run: |
+          title="papyrus-log-check ${GITHUB_REF_NAME#v}"
+          if out=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name' 2>&1); then
+            have=0; missing=0
+            for f in dist/*; do
+              if printf '%s\n' "$out" | grep -qxF "$(basename "$f")"; then have=$((have+1)); else missing=$((missing+1)); fi
+            done
+            if [ "$missing" -gt 0 ] && [ "$have" -gt 0 ]; then
+              echo "The release has $have of the files and lacks $missing. Fix it by hand; a rerun never replaces a published file."; exit 1
+            fi
+            if [ "$missing" -gt 0 ]; then   # an earlier run made the release, then failed: upload everything, checksums last
+              gh release upload "$GITHUB_REF_NAME" $(ls dist/* | grep -v '\.sha256$')
+              gh release upload "$GITHUB_REF_NAME" dist/*.sha256
+            fi
+            gh release edit "$GITHUB_REF_NAME" --title "$title" --notes-file build/release-notes.md --draft=false
+          elif printf '%s' "$out" | grep -q 'release not found'; then
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$title" --notes-file build/release-notes.md --verify-tag
+          else
+            echo "gh release view failed: $out"; exit 1
+          fi
