@@ -5,7 +5,7 @@
 ### What's new
 
 - A new prefix mode lists every line one mod's prefix or scripts wrote, across all the collector zips in a folder, and can leave out zips by date. Use `--prefix TEXT` (plain text, any letter case, repeatable), `--scripts TEXT` (the start of the mod's script names), `--since` and `--until` (`YYYY-MM-DD`, both days included) with `--logs-dir`. It writes `prefix-run<stamp>.txt` and `.json`, ends stdout with a `RESULT:` line, exits 0 when a line was found and 1 when none was, and lists a zip it can't read as SKIPPED instead of stopping (when no zip in the range holds a Papyrus log that can be read, nothing was searched, so it stops with exit code 2). The README has a new "Known limits" section.
-- With no plugins.txt, the report now says the checks on `.esm` plugins are skipped. It used to say every rule file is checked.
+- With no plugins.txt, the report now says the mods' own `.esm` plugins are not looked up. It used to say every rule file is checked.
 - `--log` now refuses more names that are not a log: a file name ending in `.ba2`, `.pex`, `.psc`, `.dll`, `.7z`, `.rar` or a strings file type, a name with trailing dots or spaces after such an ending, a name with a colon (an NTFS data stream), and a folder (the message names `--log`). It used to write over those or fail with a bare "Permission denied".
 - The shared test cases of the PMT (output paths, damaged input files, terminal text) now run in the tests and in CI.
 
@@ -18,8 +18,8 @@ A search of three made-up collector zips for the made-up mod Tidewater Errand, f
     prefix mode: D:\TestLogs, 2026-11-20 to 2026-11-23
       StarfieldLogs-20261120-101500.zip  1 lines
       StarfieldLogs-20261122-190000.zip  2 lines
-    Report: out\prefix-run20261127-214609.txt
-    JSON:   out\prefix-run20261127-214609.json
+    Report: ...\out\prefix-run20261127-214609.txt
+    JSON:   ...\out\prefix-run20261127-214609.json
     RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 1 errors), 1 left out by date
 
 The text report holds one line per match:

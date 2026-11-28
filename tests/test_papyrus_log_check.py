@@ -242,7 +242,7 @@ class TestRun(Base):
         txt = [os.path.join(self.out, f) for f in os.listdir(self.out) if f.endswith(".txt")]
         self.assertTrue(txt)
         text = read(txt[0])
-        self.assertIn("There is no plugins.txt, so the checks on .esm plugins are skipped.", text)
+        self.assertIn("There is no plugins.txt, so the mods' own .esm plugins are not looked up.", text)
         self.assertNotIn("every rule file is checked", text)
 
     def test_newest_zip_any_name(self):

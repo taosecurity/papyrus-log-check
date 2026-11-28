@@ -192,7 +192,7 @@ You can give it any of these three kinds of input:
 
 A folder or zip may also hold these files:
 
-- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, the checks on `.esm` plugins are skipped, so a mod is never shown as NOT LOADED because of its plugin, and the report says so. A rule file whose only plugins are official masters always counts as active, because the game loads them without listing them there: `Starfield.esm`, the DLC masters (`Constellation.esm`, `OldMars.esm`, `ShatteredSpace.esm`), the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. When the input is a collector package whose manifest lists the Data folder's plugins (`listing.dataPlugins`), an official master that isn't in that list doesn't count (`Starfield.esm` always does). In a file that also names other plugins, only those are looked up.
+- **`plugins.txt`** is the game's plugin list. When it is there, a mod whose plugin isn't active is shown as NOT LOADED and isn't checked. When it is missing, a mod's own `.esm` plugins aren't looked up, so a mod is never shown as NOT LOADED because of them, and the report says so (official masters are still checked as below). A rule file whose only plugins are official masters always counts as active, because the game loads them without listing them there: `Starfield.esm`, the DLC masters (`Constellation.esm`, `OldMars.esm`, `ShatteredSpace.esm`), the `SFBGS*.esm` updates and `BlueprintShips-<official>.esm`. When the input is a collector package whose manifest lists the Data folder's plugins (`listing.dataPlugins`), an official master that isn't in that list doesn't count (`Starfield.esm` always does). In a file that also names other plugins, only those are looked up.
 - **The collector's lists** in `manifest.json` (`listing.dataPlugins` and `listing.sfsePluginDlls`) are used as above. A Data plugin list without `Starfield.esm` counts as no list, and so do both empty lists when the collector didn't find the game folder (an empty `gamePath`), a `listing` that isn't an object, and a `dataPlugins` or `sfsePluginDlls` value that is missing or isn't a list. Stray .dll files in the input never stand in for a list the manifest lacks. Entries may be `{"name": ...}` objects or plain names, a path is cut to its file name, and an entry with no file name is skipped.
 - **Crash logs** (`Crashlog*.txt`, `crash-*.log`, or files in a `crashlogs` folder) are listed as FLAG lines.
 - **An SFSE plugin's own log** is checked when a rule file names it in `logs`.
@@ -305,8 +305,8 @@ papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecuri
 prefix mode: D:\TestLogs, 2026-11-20 to 2026-11-23
   StarfieldLogs-20261120-101500.zip  1 lines
   StarfieldLogs-20261122-190000.zip  2 lines
-Report: out\prefix-run20261127-214609.txt
-JSON:   out\prefix-run20261127-214609.json
+Report: ...\out\prefix-run20261127-214609.txt
+JSON:   ...\out\prefix-run20261127-214609.json
 RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 1 errors), 1 left out by date
 ```
 
