@@ -99,9 +99,12 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
 
   `--prefix` and `--scripts` are plain text in any letter case, and repeatable. The mode reads no rule file:
   with `--rules`, `--mods`, `--root` or `--set-version` it exits 2. The last stdout line is `RESULT: FOUND, ...`
-  (exit code 0) or `RESULT: NONE, ...` (exit code 1, no line found, or no zip in the range). A zip that can't be
-  read is listed as `SKIPPED` and the run goes on; when every zip in the range is `SKIPPED`, nothing was searched,
-  so it exits 2 with no `RESULT:` line and no report. The range picks zips by their date, not lines.
+  (exit code 0) or `RESULT: NONE, ...` (exit code 1, no line found, or a date range that leaves out every zip;
+  a `--logs-dir` with no `.zip` at all exits 2). A zip that can't be read is listed as `SKIPPED` and the run goes
+  on; when no zip in the range holds a Papyrus log that can be read (each is `SKIPPED` or has no Papyrus log), or
+  INPUT holds no Papyrus log (a folder of zips belongs in `--logs-dir`), nothing was searched, so it exits 2 with
+  no `RESULT:` line and no report. The range picks zips by their date, not lines. `--prefix` and `--scripts`
+  are searched as typed, so a space at either end is part of the text.
   Reports are `prefix-run<stamp>.txt` and `.json` in `--out`.
 
 - Troubleshoot a run: add `--verbose` (log on stderr) or `--log papyrus-log-check.log.txt` (log to a file).
@@ -120,7 +123,7 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   entry (in either list) has `not_loaded_reason`, a sentence that names what was checked (plugins.txt, the SFSE
   plugin DLL list, or both).
 - **Prefix mode output:** see the task above: `prefix-run<run stamp>.txt` and `.json` in `--out`, and a last stdout line that starts `RESULT:`.
-- **Exit codes:** 0 = no rule failed (FOUND counts as no failure), and `--help` (usage) and `--version`; 1 = at least one FAIL; 2 = bad arguments, a bad
+- **Exit codes:** 0 = no rule failed (FOUND counts as no failure), and `--help` (usage) and `--version`; 1 = at least one FAIL (in the prefix mode: `RESULT: NONE`, see section 5); 2 = bad arguments, a bad
   rule file (the message names the file and the field), a rule file that isn't UTF-8, a `--root`, `--logs-dir` or
   `--out` path that isn't a usable folder (the message names the option and the fix) or an input that couldn't be read
   (a zip entry that is damaged or uses a compression method Python can't read says to make the zip again; a log

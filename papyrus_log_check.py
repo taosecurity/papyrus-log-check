@@ -1320,7 +1320,7 @@ def _run_prefix(args, opened):
     firsts = ({}, {})
     for seen, vals in zip(firsts, (prefixes, scripts)):
         for v in vals:
-            seen.setdefault(v.strip().lower(), v.strip())
+            seen.setdefault(v.lower(), v)   # searched as typed: a space at either end is part of the text
     prefixes, scripts = list(firsts[0].values()), list(firsts[1].values())
 
     if args.input:
@@ -1382,6 +1382,7 @@ def _run_prefix(args, opened):
             if kind is None:
                 source_kind = pkg.kind
                 dt, how = pkg.date()
+                Log.write(f"{name}: date {dt:%Y-%m-%d %H:%M:%S} (from {how})")
             entry.update(date=f"{dt:%Y-%m-%d %H:%M:%S}", date_from=how)
             if not pkg.logs:
                 entry.update(status="no Papyrus log", logs=[], count=0, lines=[])
@@ -1389,15 +1390,7 @@ def _run_prefix(args, opened):
                 Log.write(f"{name}: no Papyrus log")
                 zips.append(entry)
                 continue
-            try:
-                found, error_hits = search_package(pkg, prefixes, scripts)
-            except ValueError as e:   # an entry that can't be unpacked is read lazily only in a folder; keep the run going
-                if kind is None:
-                    raise
-                entry.update(status="skipped", error=str(e))
-                totals["zips_skipped"] += 1
-                zips.append(entry)
-                continue
+            found, error_hits = search_package(pkg, prefixes, scripts)
             entry.update(status="read", sha256=pkg.sha256,
                          logs=[{"name": l["name"], "path": l["path"], "count": len(l["lines"])} for l in pkg.logs],
                          count=len(found), lines=found)
@@ -1421,11 +1414,16 @@ def _run_prefix(args, opened):
             if pkg is not None:
                 pkg.close()
 
-    if selected and totals["zips_skipped"] == len(selected):   # nothing was read, so NONE would mislead
-        first = next(z for z in zips if z["status"] == "skipped")
-        raise ValueError(f"none of the {len(selected)} zip(s) in the range can be read, so nothing was searched "
-                         f"(first: {first['name']}: {first['error']}). Make the zips again with the log collector, "
-                         f"or pick a range or folder that holds a zip that can be read.")
+    # nothing was searched (every zip skipped or without a Papyrus log), so RESULT: NONE would mislead
+    if selected and totals["zips_skipped"] + totals["zips_without_log"] == len(selected):
+        if kind is None:
+            raise ValueError(f"No Papyrus.N.log was found in {folder}, so nothing was searched. Give a collector zip, "
+                             f"a Logs folder or a log file as INPUT; for a folder of zips use --logs-dir.")
+        first = zips[0]
+        why = first["error"] if first["status"] == "skipped" else "no Papyrus log"
+        raise ValueError(f"none of the {len(selected)} zip(s) in the range holds a Papyrus log that can be read, so "
+                         f"nothing was searched (first: {first['name']}: {why}). Turn on Papyrus logging and make the "
+                         f"zips again with the log collector, or pick a range or folder that holds such a zip.")
     overall = FOUND if totals["lines"] else "NONE"
     run_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     data = {"tool": TOOL, "version": VERSION, "author": AUTHOR, "license": LICENSE_NAME, "url": URL, "run": run_stamp,

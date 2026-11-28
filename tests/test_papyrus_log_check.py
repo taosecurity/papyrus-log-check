@@ -2434,9 +2434,43 @@ class TestPrefixMode(unittest.TestCase):
         code, out, err = self.go("--prefix", "[MyMod]")
         self.assertEqual(code, 2)
         self.assertNotIn("RESULT: NONE", out)
-        self.assertIn("none of the 2 zip(s) in the range can be read", err)
+        self.assertIn("none of the 2 zip(s) in the range holds a Papyrus log that can be read", err)
         self.assertIn("logs-20260110-100000.zip", err)
         self.assertFalse(os.path.isdir(self.out) and any(f.startswith("prefix-run") for f in os.listdir(self.out)))
+
+    def test_no_zip_with_a_papyrus_log_is_exit_2_not_none(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip", log=None)
+        with open(os.path.join(self.logs, "logs-20260111-100000.zip"), "wb") as f:
+            f.write(b"this is not a zip")
+        code, out, err = self.go("--prefix", "[MyMod]")
+        self.assertEqual(code, 2)
+        self.assertNotIn("RESULT: NONE", out)
+        self.assertIn("none of the 2 zip(s) in the range holds a Papyrus log", err)
+        self.assertIn("logs-20260110-100000.zip: no Papyrus log", err)
+
+    def test_folder_of_zips_as_input_is_exit_2_not_none(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip")
+        code, out, err = self.go(self.logs, "--prefix", "[MyMod]", logs=False)
+        self.assertEqual(code, 2)
+        self.assertNotIn("RESULT: NONE", out)
+        self.assertIn("No Papyrus.N.log was found", err)
+        self.assertIn("--logs-dir", err)
+
+    def test_prefix_is_searched_as_typed_spaces_included(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip",
+                           log="[09:00:01] TIDE quest started\n[09:00:02] TIDEWATER other\n")
+        code, out, _ = self.go("--prefix", "TIDE ")
+        self.assertEqual(code, 0)
+        data = json.loads(self.report(".json"))
+        self.assertEqual(data["prefixes"], ["TIDE "])
+        self.assertEqual(data["totals"]["lines"], 1)
+        self.assertNotIn("TIDEWATER", self.report())
+
+    def test_input_zip_verbose_names_the_date_source(self):
+        path = make_collector_zip(self.tmp.name, "logs-20260110-100000.zip")
+        code, _, err = self.go(path, "--prefix", "[MyMod]", "--verbose", logs=False)
+        self.assertEqual(code, 0, err)
+        self.assertIn("logs-20260110-100000.zip: date 2026-01-10 10:00:00 (from name)", err)
 
     def test_input_zip_with_a_stamp_that_is_not_a_date(self):
         path = make_collector_zip(self.tmp.name, "logs-20261399-250000.zip")

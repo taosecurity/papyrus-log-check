@@ -235,7 +235,7 @@ logcheck-20261109-095824-run20261120-220538.json  the same data for other tools
 The exit code tells scripts what happened:
 
 - 0 means no rule failed. `--help` and `--version` also exit with 0, after printing the usage or the version.
-- 1 means at least one rule failed.
+- 1 means at least one rule failed. In the prefix mode, 1 means `RESULT: NONE` (no line found) instead; see "Search all the test logs for one mod".
 - 2 means the arguments were wrong, a rule file was bad, the input couldn't be read, or the report couldn't be written.
 
 With exit code 2, the error is on stderr. The tool's own errors come after the banner line and are one line that names the file or option and the fix. For example, `--root`, `--logs-dir` or `--out` on a path that isn't a usable folder says which option to correct, a rule file that isn't UTF-8 says to save it as UTF-8, and a zip entry that can't be read (a damaged zip, or one made with a compression method Python can't read) says to make the zip again.
@@ -291,7 +291,7 @@ The prefix mode answers "what did my mod write, across all my test runs?". It li
 python papyrus_log_check.py --logs-dir FOLDER --prefix TEXT [--prefix TEXT ...] [--scripts TEXT ...] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
 ```
 
-- `--prefix TEXT` is plain text, in any letter case, such as `[TIDE]`. Repeat it for more than one prefix.
+- `--prefix TEXT` is plain text, in any letter case, such as `[TIDE]`. It is searched as typed, so a space at either end is part of the text. Repeat it for more than one prefix.
 - `--scripts TEXT` is the start of the mod's script names, such as `TIDE_`. A Papyrus error that names one of those scripts is shown whole, with its `stack:` line. You can use `--prefix` and `--scripts` together.
 - `--logs-dir FOLDER` (or the environment variable `PAPYRUS_LOG_CHECK_LOGS`) is the folder whose `.zip` files are searched, oldest first. Zips in subfolders are not read. You can give one zip, folder or log as INPUT instead; then there is no date range.
 - `--since` and `--until` pick zips by the day they were made, both days included. A zip's day comes from the `yyyymmdd-hhmmss` stamp in its name, or else the collector's manifest, or else the file time. `--verbose` says which one was used.
@@ -320,7 +320,7 @@ StarfieldLogs-20261122-190000.zip  Papyrus.0.log:2  [19:00:03] [TIDE] stage 20: 
 StarfieldLogs-20261122-190000.zip  Papyrus.0.log:3  [19:00:05] error: Property Letter on script TIDE_LetterScript attached to TIDE_Errand (0100080A) cannot be bound because <NULL form> is not the right type
 ```
 
-The exit code is 0 when at least one line was found, 1 when none was (a mod that never logged, or a range that holds no zips), and 2 for a refusal such as a bad date or `--prefix` together with `--rules`. A zip that can't be read is listed as SKIPPED with the reason, and the run goes on. When every zip in the range is SKIPPED, nothing was searched, so the run stops with exit code 2 and an error that names the first zip, and writes no report. A run that exits 0 or 1 always ends stdout with the `RESULT:` line, so a script can read it.
+The exit code is 0 when at least one line was found, 1 when none was (a mod that never logged, or a date range that leaves out every zip), and 2 for a refusal such as a bad date, `--prefix` together with `--rules`, or a `--logs-dir` folder with no `.zip` in it at all. A zip that can't be read is listed as SKIPPED with the reason, and the run goes on. When no zip in the range holds a Papyrus log that can be read (each one is SKIPPED or has no Papyrus log), nothing was searched, so the run stops with exit code 2 and an error that names the first zip, and writes no report. The same goes for an INPUT with no Papyrus log in it, such as a folder of zips given as INPUT instead of with `--logs-dir`. A run that exits 0 or 1 always ends stdout with the `RESULT:` line, so a script can read it.
 
 ## Rule files
 
