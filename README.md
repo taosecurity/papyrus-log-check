@@ -310,6 +310,8 @@ JSON:   out\prefix-run20261127-214609.json
 RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 1 errors), 1 left out by date
 ```
 
+The first number in `RESULT:` and the count after each zip are every line shown, stack lines included. In `scripts TIDE_: 1 lines in 1 errors`, "lines" counts only the lines that name one of the scripts, and "errors" counts the Papyrus errors and warnings those scripts are named in, so it can be smaller than the zip's count.
+
 The text report puts one line under each zip heading: the zip, the log and its line number, and the text.
 
 ```

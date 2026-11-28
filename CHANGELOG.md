@@ -6,7 +6,6 @@
 
 - A new prefix mode lists every line one mod's prefix or scripts wrote, across all the collector zips in a folder, and can leave out zips by date. Use `--prefix TEXT` (plain text, any letter case, repeatable), `--scripts TEXT` (the start of the mod's script names), `--since` and `--until` (`YYYY-MM-DD`, both days included) with `--logs-dir`. It writes `prefix-run<stamp>.txt` and `.json`, ends stdout with a `RESULT:` line, exits 0 when a line was found and 1 when none was, and lists a zip it can't read as SKIPPED instead of stopping (when no zip in the range holds a Papyrus log that can be read, nothing was searched, so it stops with exit code 2). The README has a new "Known limits" section.
 - With no plugins.txt, the report now says the checks on `.esm` plugins are skipped. It used to say every rule file is checked.
-- A rule's `"always": null` is refused with the same message as `"always": "false"` (exit code 2): `always` must be true or false without quotes.
 - `--log` now refuses more names that are not a log: a file name ending in `.ba2`, `.pex`, `.psc`, `.dll`, `.7z`, `.rar` or a strings file type, a name with trailing dots or spaces after such an ending, a name with a colon (an NTFS data stream), and a folder (the message names `--log`). It used to write over those or fail with a bare "Permission denied".
 - The shared test cases of the PMT (output paths, damaged input files, terminal text) now run in the tests and in CI.
 
