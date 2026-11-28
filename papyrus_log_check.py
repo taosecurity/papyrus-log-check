@@ -1091,8 +1091,8 @@ def text_report(data, max_lines):
 
 # ----------------------------------------------------------------------------- main
 
-def newest_zip(folder, *, from_env=False):
-    """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time.
+def list_zips(folder, *, from_env=False):
+    """Every .zip at the top of a folder (0.5.0: split out of newest_zip, so the prefix mode gives the same messages).
     `from_env` is True when the folder came from PAPYRUS_LOG_CHECK_LOGS (not --logs-dir), for the error text."""
     if not os.path.isdir(folder):
         if from_env:
@@ -1109,6 +1109,12 @@ def newest_zip(folder, *, from_env=False):
     zips = [os.path.join(folder, f) for f in names if f.lower().endswith(".zip")]
     if not zips:
         raise FileNotFoundError(f"There is no .zip in {folder}.")
+    return zips
+
+
+def newest_zip(folder, *, from_env=False):
+    """The newest .zip in a folder: by the yyyymmdd-hhmmss stamp in its name, then by file time."""
+    zips = list_zips(folder, from_env=from_env)
 
     def key(p):
         m = STAMP_RE.search(os.path.basename(p))
@@ -1133,6 +1139,293 @@ def _bug_ask():
             f"{URL}/issues with that log file attached.")
 
 
+# ----------------------------------------------------------------------------- prefix mode (0.5.0)
+
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def parse_day(text, option):
+    """A YYYY-MM-DD day for --since / --until, or a refusal with an example."""
+    if DATE_RE.match(text):
+        try:
+            return datetime.datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    raise ValueError(f"{option} '{text}' is not a day. Give it as YYYY-MM-DD, for example {option} 2026-11-20.")
+
+
+def _stamp_to_dt(digits):
+    """yyyymmddhhmmss (14 digits or more) to a datetime, or None when it isn't a real date and time."""
+    try:
+        return datetime.datetime.strptime(digits[:14], "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def zip_date(path):
+    """(datetime, where it came from) for one zip: the yyyymmdd-hhmmss stamp in its name, else the manifest's
+    'created', else the file time (the order Package.stamp() uses)."""
+    m = STAMP_RE.search(os.path.basename(path))
+    if m:
+        dt = _stamp_to_dt(m.group(1).replace("-", ""))
+        if dt:
+            return dt, "name"
+        Log.write(f"{os.path.basename(path)}: the stamp {m.group(1)} in the name is not a real date; trying the manifest")
+    try:
+        pkg = Package(path)
+    except (OSError, ValueError, zipfile.BadZipFile):
+        pkg = None   # the zip is reported as SKIPPED later, if it is in the range
+    if pkg is not None:
+        try:
+            digits = re.sub(r"\D", "", str(pkg.manifest.get("created", "")))
+        finally:
+            pkg.close()
+        dt = _stamp_to_dt(digits) if len(digits) >= 14 else None
+        if dt:
+            return dt, "manifest"
+    return datetime.datetime.fromtimestamp(os.path.getmtime(path)), "file time"
+
+
+def _prefix_matchers(prefixes, scripts):
+    pre = [(p, p.lower()) for p in prefixes]
+    scr = [(s, re.compile(r"(?<![A-Za-z0-9_])" + re.escape(s), re.I)) for s in scripts]
+    return pre, scr
+
+
+def _line_labels(text, pre, scr):
+    low = text.lower()
+    return ([p for p, pl in pre if pl in low], [f"scripts {s}" for s, rx in scr if rx.search(text)])
+
+
+def search_package(pkg, prefixes, scripts):
+    """Every line in the package's Papyrus logs that carries a prefix or names a script, in log order. A Papyrus error
+    or warning whose own line or any stack line names a script is returned whole (its line and its stack lines)."""
+    pre, scr = _prefix_matchers(prefixes, scripts)
+    found, error_hits = [], {}   # error_hits: script label -> number of errors it matched
+
+    def add(log, n, text, matched, kind):
+        found.append({"log": log["name"], "line": n, "text": text, "matched": matched, "kind": kind})
+
+    for log in pkg.logs:
+        lines = log["lines"]
+        k = 0
+        while k < len(lines):
+            m = ERRLINE_RE.match(lines[k])
+            end = k + 1
+            if m:
+                while end < len(lines) and not TIME_RE.match(lines[end]):
+                    end += 1
+            labels = [(_line_labels(lines[j], pre, scr)) for j in range(k, end)]
+            if m and any(s for _, s in labels):
+                hit = sorted({x for _, s in labels for x in s})
+                for x in hit:
+                    error_hits[x] = error_hits.get(x, 0) + 1
+                for j in range(k, end):
+                    if lines[j].strip():
+                        add(log, j + 1, lines[j], labels[j - k][0] + labels[j - k][1], "error" if j == k else "stack")
+            else:
+                for j in range(k, end):
+                    p, s = labels[j - k]
+                    if p or s:
+                        add(log, j + 1, lines[j], p + s, "prefix" if p else "script")
+            k = end
+    return found, error_hits
+
+
+def _day_text(day):
+    return str(day) if day else "any"
+
+
+def prefix_report(data, max_lines):
+    out = [BYLINE, f"Run {data['run']}", "Prefix mode: every line a mod's prefix or scripts wrote, across the log zips",
+           f"Prefixes: {', '.join(data['prefixes']) or '-'}", f"Script starts: {', '.join(data['scripts']) or '-'}"]
+    out.append(f"Source: {data['source']['name']} ({data['source']['kind']})")
+    out.append(f"Range: {_day_text(data['since'])} to {_day_text(data['until'])}: {data['totals']['zips_in_range']} zips in "
+               f"the range, {data['left_out_by_date']} left out by date")
+    out.append("")
+    out.append("Summary")
+    t = data["totals"]
+    for p in data["prefixes"]:
+        c = t["by_prefix"][p]
+        out.append(f"  prefix {p}: {c['lines']} lines in {c['zips']} zips")
+    for s in data["scripts"]:
+        c = t["by_scripts"][s]
+        out.append(f"  scripts {s}: {c['lines']} lines in {c['errors']} errors, in {c['zips']} zips")
+    out.append(f"  total: {t['lines']} lines in {t['zips_with_lines']} of {t['zips_in_range']} zips"
+               f"; {t['zips_skipped']} skipped, {t['zips_without_log']} without a Papyrus log")
+    out.append("")
+    for z in data["zips"]:
+        if z["status"] == "skipped":
+            out.append(f"SKIPPED {z['name']}: {z['error']}")
+            continue
+        if z["status"] == "no Papyrus log":
+            out.append(f"== {z['name']} ({z['date']}, from {z['date_from']}): no Papyrus log")
+            continue
+        out.append(f"== {z['name']} ({z['date']}, from {z['date_from']}): {z['count']} lines")
+        for ln in z["lines"][:max_lines]:
+            out.append(f"{z['name']}  {ln['log']}:{ln['line']}  {ln['text'].strip()}")
+        if max_lines is not None and z["count"] > max_lines:
+            out.append(f"... and {z['count'] - max_lines} more (the JSON has every line)")
+    out.append("")
+    out.append("The range picks zips, not lines: a Papyrus line carries only a time of day. A log that the collector packed")
+    out.append("in two zips shows in both. This report helps you read the logs; it is not a verdict.")
+    return "\n".join(one_line(line) for line in out) + "\n"
+
+
+def _run_prefix(args, opened):
+    prefixes = [p for p in (args.prefix or [])]
+    scripts = [s for s in (args.scripts or [])]
+    for opt, vals in (("--prefix", prefixes), ("--scripts", scripts)):
+        if any(not v.strip() for v in vals):
+            raise ValueError(f"{opt} is empty. Give the text to look for, for example {opt} {'[MyMod]' if opt == '--prefix' else 'MyMod_'}.")
+    for opt, given in (("--rules", args.rules), ("--mods", args.mods), ("--root", args.root),
+                       ("--set-version", args.set_version)):
+        if given is not None and given != []:
+            raise ValueError(f"{opt} can't be used with --prefix or --scripts: the prefix mode reads no rule files. Leave {opt} out.")
+    if args.max_lines is not None and args.max_lines < 1:
+        raise ValueError("--max-lines must be 1 or more in the prefix mode (it caps the lines shown per zip in the text report).")
+    since = parse_day(args.since, "--since") if args.since is not None else None
+    until = parse_day(args.until, "--until") if args.until is not None else None
+    if since and until and since > until:
+        raise ValueError(f"--since {since} is later than --until {until}. Swap them, or give one that is on or before the other.")
+    prefixes = list(dict.fromkeys(p.strip() for p in prefixes))
+    scripts = list(dict.fromkeys(s.strip() for s in scripts))
+
+    if args.input:
+        if args.logs_dir:
+            raise ValueError("Give either INPUT or --logs-dir, not both: the prefix mode searches one input or every zip in a folder.")
+        if since or until:
+            raise ValueError("--since and --until pick zips in a --logs-dir folder; they can't be used with INPUT. Leave them out, or use --logs-dir.")
+        paths, folder, kind = [args.input], args.input, None
+    else:
+        logs_dir, from_env = args.logs_dir, False
+        if not logs_dir:
+            logs_dir, from_env = os.environ.get("PAPYRUS_LOG_CHECK_LOGS"), True
+        if not logs_dir:
+            raise ValueError("Give --logs-dir FOLDER (or set PAPYRUS_LOG_CHECK_LOGS), or give a log file, a folder or a zip as INPUT.")
+        paths, folder, kind = list_zips(logs_dir, from_env=from_env), logs_dir, "logs-dir"
+
+    dated = []
+    for p in paths:
+        if kind:
+            dt, how = zip_date(p)
+        else:
+            dt, how = None, None
+        dated.append((dt, how, p))
+    if kind:
+        dated.sort(key=lambda x: (x[0], os.path.basename(x[2]).lower()))
+    selected, left_out = [], 0
+    for dt, how, p in dated:
+        if kind:
+            day = dt.date()
+            inside = (since is None or day >= since) and (until is None or day <= until)
+            Log.write(f"{os.path.basename(p)}: date {dt:%Y-%m-%d %H:%M:%S} (from {how}); "
+                      f"{'in the range' if inside else 'left out by the date range'}")
+            if not inside:
+                left_out += 1
+                continue
+        selected.append((dt, how, p))
+    Log.write(f"prefix mode: {len(selected)} zip(s) in the range, {left_out} left out by date")
+
+    zips, results = [], {}
+    totals = {"lines": 0, "by_prefix": {p: {"lines": 0, "zips": 0} for p in prefixes},
+              "by_scripts": {f"{s}": {"lines": 0, "errors": 0, "zips": 0} for s in scripts},
+              "zips_in_range": len(selected), "zips_with_lines": 0, "zips_skipped": 0, "zips_without_log": 0}
+    source_kind = kind
+    for dt, how, p in selected:
+        name = os.path.basename(os.path.normpath(p))
+        entry = {"name": name}
+        pkg = None
+        try:
+            try:
+                pkg = Package(p)   # closed after each zip (the finally below), so a big folder isn't held in memory
+            except (OSError, ValueError, zipfile.BadZipFile) as e:
+                if kind is None:
+                    raise
+                entry.update(date=f"{dt:%Y-%m-%d %H:%M:%S}", date_from=how, status="skipped", error=str(e))
+                totals["zips_skipped"] += 1
+                Log.write(f"{name}: skipped ({e})")
+                zips.append(entry)
+                continue
+            if kind is None:
+                source_kind = pkg.kind
+                dt, how = datetime.datetime.strptime(pkg.stamp(), "%Y%m%d-%H%M%S"), "stamp"
+            entry.update(date=f"{dt:%Y-%m-%d %H:%M:%S}", date_from=how)
+            if not pkg.logs:
+                entry.update(status="no Papyrus log", logs=[], count=0, lines=[])
+                totals["zips_without_log"] += 1
+                Log.write(f"{name}: no Papyrus log")
+                zips.append(entry)
+                continue
+            try:
+                found, error_hits = search_package(pkg, prefixes, scripts)
+            except ValueError as e:   # an entry that can't be unpacked is read lazily only in a folder; keep the run going
+                if kind is None:
+                    raise
+                entry.update(status="skipped", error=str(e))
+                totals["zips_skipped"] += 1
+                zips.append(entry)
+                continue
+            entry.update(status="read", sha256=pkg.sha256,
+                         logs=[{"name": l["name"], "path": l["path"], "count": len(l["lines"])} for l in pkg.logs],
+                         count=len(found), lines=found)
+            zips.append(entry)
+            Log.write(f"{name}: {len(found)} line(s)")
+            totals["lines"] += len(found)
+            if found:
+                totals["zips_with_lines"] += 1
+            for p_ in prefixes:
+                n = sum(1 for ln in found if p_ in ln["matched"])
+                totals["by_prefix"][p_]["lines"] += n
+                totals["by_prefix"][p_]["zips"] += 1 if n else 0
+            for s in scripts:
+                label = f"scripts {s}"
+                n = sum(1 for ln in found if label in ln["matched"])
+                e = error_hits.get(label, 0)
+                totals["by_scripts"][s]["lines"] += n
+                totals["by_scripts"][s]["errors"] += e
+                totals["by_scripts"][s]["zips"] += 1 if (n or e) else 0
+        finally:
+            if pkg is not None:
+                pkg.close()
+
+    overall = FOUND if totals["lines"] else "NONE"
+    run_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    data = {"tool": TOOL, "version": VERSION, "author": AUTHOR, "license": LICENSE_NAME, "url": URL, "run": run_stamp,
+            "mode": "prefix", "prefixes": prefixes, "scripts": scripts,
+            "since": str(since) if since else None, "until": str(until) if until else None,
+            "source": {"kind": source_kind or "logs-dir", "name": folder if kind is None else os.path.abspath(folder)},
+            "left_out_by_date": left_out, "zips": zips, "totals": totals, "overall": overall}
+    out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+    report = prefix_report(data, args.max_lines)
+    base = _write_reports(out_dir, os.path.join(out_dir, f"prefix-run{run_stamp}"), report, data)
+    Log.write(f"wrote {base}.txt and {base}.json; overall {overall}")
+
+    print(one_line(f"prefix mode: {folder}, {_day_text(since)} to {_day_text(until)}"))
+    for z in zips:
+        if z["status"] == "skipped":
+            print(one_line(f"  SKIPPED    {z['name']}: {z['error']}"))
+        elif z["status"] == "no Papyrus log":
+            print(one_line(f"  {z['name']}  no Papyrus log"))
+        else:
+            print(one_line(f"  {z['name']}  {z['count']} lines"))
+    print(f"Report: {base}.txt")
+    print(f"JSON:   {base}.json")
+    parts = [f"prefix {p}: {totals['by_prefix'][p]['lines']}" for p in prefixes]
+    parts += [f"scripts {s}: {totals['by_scripts'][s]['lines']} lines in {totals['by_scripts'][s]['errors']} errors" for s in scripts]
+    if overall == FOUND:
+        res = f"RESULT: FOUND, {totals['lines']} lines in {totals['zips_with_lines']} of {len(selected)} zips"
+    else:
+        res = f"RESULT: NONE, 0 lines in {len(selected)} zips"
+    res += f" ({', '.join(parts)})"
+    if totals["zips_skipped"]:
+        res += f", {totals['zips_skipped']} skipped"
+    if left_out:
+        res += f", {left_out} left out by date"
+    print(one_line(res))
+    return 0 if overall == FOUND else 1
+
+
 def run(args):
     opened = []  # the Package, so it is closed even when the run stops on an error
     try:
@@ -1143,7 +1436,11 @@ def run(args):
 
 
 def _run(args, opened):
-    root = os.path.abspath(args.root)
+    if args.prefix is not None or args.scripts is not None:
+        return _run_prefix(args, opened)
+    if args.since is not None or args.until is not None:
+        raise ValueError("--since and --until belong to the prefix mode. Add --prefix TEXT or --scripts TEXT, or leave them out.")
+    root = os.path.abspath(args.root or ".")
     zpath = args.input
     if not zpath:
         logs_dir = args.logs_dir
@@ -1261,7 +1558,26 @@ def _run(args, opened):
     }
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     base = os.path.join(out_dir, f"logcheck-{pkg.stamp()}-run{run_stamp}")
-    report = text_report(data, args.max_lines)
+    report = text_report(data, 5 if args.max_lines is None else args.max_lines)
+    base = _write_reports(out_dir, base, report, data)
+    Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
+
+    print(one_line(pkg.name))
+    for r in results:
+        print(one_line(f"  {shown_status(r):<10} {r['mod']} {r['version']}"))
+    for n in not_loaded:
+        print(one_line(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
+    for e in rule_errors:
+        print(one_line(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
+    for fl in flags:
+        print(one_line(f"  FLAG       {fl['kind']}: {fl['text'][:120]}"))
+    print(f"Report: {base}.txt")
+    print(f"JSON:   {base}.json")
+    return 1 if data["overall"] == FAIL else 0
+
+
+def _write_reports(out_dir, base, report, data):
+    """Writes the text report and the JSON as a pair under the first free name; returns the name without its extension."""
     # 0.4.2 (simplified): the pair takes the first free name (-2, -3, ... for an earlier run in the same second), and
     # each file is created exclusively ("x"), so a run never overwrites another run's report. Any failure stops the
     # run with exit 2 and one error that names the file and the fix. Nothing is retried and nothing is removed: the
@@ -1307,20 +1623,7 @@ def _run(args, opened):
                              f"(a path that is not a file, has no characters Windows refuses, and is not locked or protected).{saved}")
         raise ValueError(f"Can't write the report in {out_dir} ({why}). Check the folder and the disk, or give --out "
                          f"another folder.{saved}")
-    Log.write(f"wrote {base}.txt and {base}.json; overall {data['overall']}")
-
-    print(one_line(pkg.name))
-    for r in results:
-        print(one_line(f"  {shown_status(r):<10} {r['mod']} {r['version']}"))
-    for n in not_loaded:
-        print(one_line(f"  {NOT_LOADED:<10} {n['mod']} {n['version']}"))
-    for e in rule_errors:
-        print(one_line(f"  SKIPPED    rule file {e['path']}: {e['error']}"))
-    for fl in flags:
-        print(one_line(f"  FLAG       {fl['kind']}: {fl['text'][:120]}"))
-    print(f"Report: {base}.txt")
-    print(f"JSON:   {base}.json")
-    return 1 if data["overall"] == FAIL else 0
+    return base
 
 
 class _VersionShown(Exception):
@@ -1370,15 +1673,26 @@ def _main(argv):
     ap.add_argument("--logs-dir", metavar="FOLDER",
                     help="This folder holds log zips, and the newest one is checked. "
                          "The environment variable PAPYRUS_LOG_CHECK_LOGS does the same.")
-    ap.add_argument("--root", default=".", metavar="FOLDER",
+    ap.add_argument("--root", default=None, metavar="FOLDER",
                     help="This folder holds mod project folders with <project>\\testplan\\logrules.json. "
                          "The default is the current folder.")
     ap.add_argument("--mods", metavar="A,B",
                     help="This lists project folder names under --root, or rule file paths, separated by commas.")
     ap.add_argument("--out", metavar="FOLDER",
                     help="This sets the output folder. The default is out\\ next to this script.")
-    ap.add_argument("--max-lines", type=int, default=5, metavar="N",
-                    help="This sets how many matching lines the text report shows per rule.")
+    ap.add_argument("--max-lines", type=int, default=None, metavar="N",
+                    help="This sets how many matching lines the text report shows per rule (default 5). "
+                         "In the prefix mode it caps the lines shown per zip (default: no cap; the JSON always holds every line).")
+    ap.add_argument("--prefix", action="append", metavar="TEXT",
+                    help="This turns on the prefix mode: it lists every line that holds TEXT (plain text, any letter case, "
+                         "for example '[MyMod]') across every zip in --logs-dir. Repeat it for more prefixes.")
+    ap.add_argument("--scripts", action="append", metavar="TEXT",
+                    help="This turns on the prefix mode for a mod's scripts: the start of their names (for example MyMod_). "
+                         "A Papyrus error whose line or stack names them is shown whole. Repeat it, or use it with --prefix.")
+    ap.add_argument("--since", metavar="YYYY-MM-DD",
+                    help="This leaves out zips made before this day (prefix mode only; the day is included).")
+    ap.add_argument("--until", metavar="YYYY-MM-DD",
+                    help="This leaves out zips made after this day (prefix mode only; the day is included).")
     ap.add_argument("--set-version", action="append", metavar="MOD=VERSION",
                     help="This checks a mod (project folder or mod name) as another version than its rule file says, "
                          "for rechecking older logs. You can repeat it.")

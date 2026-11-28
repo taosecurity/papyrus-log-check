@@ -2293,5 +2293,221 @@ class TestDocsVersion(unittest.TestCase):
             self.assertTrue(hits, "pattern matches neither README.md nor AGENTS.md: " + p)
 
 
+PFX_LOG = """[09:00:00] Papyrus log opened (PC-64)
+[09:00:01] [MyMod] setup done
+[09:00:02] [OtherMod] hello
+[09:00:03] error: Cannot call Foo() on a None object, aborting function call
+stack:
+\t[ (FF000801)].MyMod_Quest.OnInit() - "MyMod_Quest.psc" Line 12
+\t[ (FF000802)].Other.Run() - "Other.psc" Line 3
+
+[09:00:04] error: Cannot call Bar() on a None object, aborting function call
+stack:
+\t[ (00001234)].NotMyMod_Thing.OnLoad() - "NotMyMod_Thing.psc" Line 3
+[09:00:05] warning: Something odd
+stack:
+\t[ (00001235)].OtherScript.Go() - "OtherScript.psc" Line 8
+[09:00:06] [mymod] lower case line
+"""
+
+
+def make_collector_zip(folder, name, log=PFX_LOG, created=None, extra=None):
+    path = os.path.join(folder, name)
+    with zipfile.ZipFile(path, "w") as z:
+        m = {"tool": "example-collector 1.0"}
+        if created:
+            m["created"] = created
+        z.writestr("manifest.json", json.dumps(m))
+        if log is not None:
+            z.writestr("Logs\\Script\\Papyrus.0.log", log)
+        for n, t in (extra or {}).items():
+            z.writestr(n, t)
+    return path
+
+
+class TestPrefixMode(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.logs = os.path.join(self.tmp.name, "TestLogs")
+        os.makedirs(self.logs)
+        self.out = os.path.join(self.tmp.name, "out")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def go(self, *argv, logs=True):
+        import contextlib
+        import io
+        argv = list(argv)
+        if logs:
+            argv = ["--logs-dir", self.logs] + argv
+        o, e = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+            code = plc.main(argv + ["--out", self.out])
+        return code, o.getvalue(), e.getvalue()
+
+    def report(self, ext=".txt"):
+        names = [f for f in os.listdir(self.out) if f.startswith("prefix-run") and f.endswith(ext)]
+        self.assertEqual(len(names), 1)
+        return read(os.path.join(self.out, names[0]))
+
+    def three_zips(self):
+        for n in ("logs-20260110-100000.zip", "logs-20260115-100000.zip", "logs-20260120-100000.zip"):
+            make_collector_zip(self.logs, n)
+
+    def test_lines_across_zips_oldest_first_with_zip_names(self):
+        self.three_zips()
+        code, out, _ = self.go("--prefix", "[MyMod]")
+        self.assertEqual(code, 0)
+        txt = self.report()
+        self.assertIn("logs-20260110-100000.zip  Papyrus.0.log:2  [09:00:01] [MyMod] setup done", txt)
+        self.assertLess(txt.index("logs-20260110"), txt.index("logs-20260120"))
+        last = out.strip().splitlines()[-1]
+        self.assertTrue(last.startswith("RESULT: FOUND, 6 lines in 3 of 3 zips (prefix [MyMod]: 6)"), last)
+        data = json.loads(self.report(".json"))
+        self.assertEqual(data["mode"], "prefix")
+        self.assertEqual(data["totals"]["by_prefix"]["[MyMod]"]["zips"], 3)
+        self.assertEqual(data["zips"][0]["lines"][1]["matched"], ["[MyMod]"])   # case-blind: "[mymod]"
+
+    def test_date_range_leaves_zips_out_and_includes_both_days(self):
+        self.three_zips()
+        code, out, _ = self.go("--prefix", "[MyMod]", "--since", "2026-01-15", "--until", "2026-01-15")
+        self.assertEqual(code, 0)
+        txt = self.report()
+        self.assertIn("logs-20260115-100000.zip", txt)
+        self.assertNotIn("logs-20260110-100000.zip", txt)
+        self.assertNotIn("logs-20260120-100000.zip", txt)
+        self.assertTrue(out.strip().splitlines()[-1].endswith("2 left out by date"))
+        self.assertEqual(json.loads(self.report(".json"))["left_out_by_date"], 2)
+
+    def test_everything_outside_range_is_none_exit_1(self):
+        self.three_zips()
+        code, out, _ = self.go("--prefix", "[MyMod]", "--until", "2025-12-31")
+        self.assertEqual(code, 1)
+        self.assertTrue(out.strip().splitlines()[-1].startswith("RESULT: NONE, 0 lines in 0 zips"))
+
+    def test_prefix_with_no_lines_says_zero(self):
+        self.three_zips()
+        code, out, _ = self.go("--prefix", "[MyMod]", "--prefix", "[Nobody]")
+        self.assertEqual(code, 0)
+        self.assertIn("prefix [Nobody]: 0 lines in 0 zips", self.report())
+        self.assertIn("prefix [Nobody]: 0", out.strip().splitlines()[-1])
+        code, out, _ = self.go("--prefix", "[Nobody]")
+        self.assertEqual(code, 1)
+        self.assertTrue(out.strip().splitlines()[-1].startswith("RESULT: NONE"))
+
+    def test_zip_without_papyrus_log(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip", log=None)
+        make_collector_zip(self.logs, "logs-20260111-100000.zip")
+        code, out, _ = self.go("--prefix", "[MyMod]")
+        self.assertEqual(code, 0)
+        self.assertIn("logs-20260110-100000.zip  no Papyrus log", out)
+        self.assertIn("no Papyrus log", self.report())
+
+    def test_damaged_zip_is_skipped_and_run_goes_on(self):
+        with open(os.path.join(self.logs, "logs-20260110-100000.zip"), "wb") as f:
+            f.write(b"this is not a zip")
+        make_collector_zip(self.logs, "logs-20260111-100000.zip")
+        code, out, _ = self.go("--prefix", "[MyMod]")
+        self.assertEqual(code, 0)
+        self.assertIn("SKIPPED    logs-20260110-100000.zip:", out)
+        self.assertIn("SKIPPED logs-20260110-100000.zip:", self.report())
+        self.assertTrue(out.strip().splitlines()[-1].endswith("1 skipped"))
+        self.assertEqual(json.loads(self.report(".json"))["zips"][0]["status"], "skipped")
+
+    def test_script_error_block_shown_whole(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip")
+        code, out, _ = self.go("--scripts", "MyMod_")
+        self.assertEqual(code, 0)
+        data = json.loads(self.report(".json"))
+        lines = data["zips"][0]["lines"]
+        self.assertEqual([(l["line"], l["kind"]) for l in lines], [(4, "error"), (5, "stack"), (6, "stack"), (7, "stack")])
+        self.assertEqual(lines[2]["matched"], ["scripts MyMod_"])
+        self.assertEqual(lines[0]["matched"], [])   # the error line itself names no script; its stack does
+        self.assertEqual(data["totals"]["by_scripts"]["MyMod_"]["errors"], 1)
+        self.assertNotIn("NotMyMod_Thing", self.report())   # a name that only ends with the start is another mod's
+        self.assertIn("scripts MyMod_: 1 lines in 1 errors", out.strip().splitlines()[-1])
+
+    def test_prefix_and_scripts_together_count_each_line_once(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip")
+        code, out, _ = self.go("--prefix", "[MyMod]", "--scripts", "MyMod_")
+        self.assertEqual(code, 0)
+        data = json.loads(self.report(".json"))
+        self.assertEqual(data["totals"]["lines"], 6)   # 2 prefix lines + the whole error block (4 lines)
+
+    def test_names_with_spaces(self):
+        folder = os.path.join(self.tmp.name, "My Test Logs")
+        os.makedirs(folder)
+        make_collector_zip(folder, "logs 20260110-100000 my mod.zip", log="[09:00:01] [My Mod] setup done\n")
+        code, out, _ = self.go("--logs-dir", folder, "--prefix", "[My Mod]", logs=False)
+        self.assertEqual(code, 0)
+        self.assertIn("logs 20260110-100000 my mod.zip  Papyrus.0.log:1  [09:00:01] [My Mod] setup done", self.report())
+
+    def test_date_from_manifest_when_name_has_no_stamp(self):
+        make_collector_zip(self.logs, "plain-name.zip", created="2026-01-05T10:00:00")
+        code, out, _ = self.go("--prefix", "[MyMod]", "--since", "2026-01-05", "--until", "2026-01-05", "--verbose")
+        self.assertEqual(code, 0)
+        z = json.loads(self.report(".json"))["zips"][0]
+        self.assertEqual((z["date"], z["date_from"]), ("2026-01-05 10:00:00", "manifest"))
+
+    def test_verbose_logs_each_zips_range_decision(self):
+        self.three_zips()
+        code, out, err = self.go("--prefix", "[MyMod]", "--since", "2026-01-12", "--verbose")
+        self.assertIn("logs-20260110-100000.zip: date 2026-01-10 10:00:00 (from name); left out by the date range", err)
+        self.assertIn("logs-20260120-100000.zip: date 2026-01-20 10:00:00 (from name); in the range", err)
+
+    def test_input_single_zip(self):
+        z = make_collector_zip(self.tmp.name, "logs-20260110-100000.zip")
+        code, out, _ = self.go(z, "--prefix", "[MyMod]", logs=False)
+        self.assertEqual(code, 0)
+        self.assertIn("logs-20260110-100000.zip  Papyrus.0.log:2", self.report())
+
+    def test_max_lines_caps_text_report_only(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip")
+        self.go("--prefix", "[MyMod]", "--max-lines", "1")
+        self.assertIn("and 1 more", self.report())
+        self.assertEqual(json.loads(self.report(".json"))["zips"][0]["count"], 2)
+
+    def refuses(self, *argv, fragment, logs=True):
+        code, out, err = self.go(*argv, logs=logs)
+        self.assertEqual(code, 2, err)
+        self.assertIn(fragment, err)
+        self.assertFalse(os.path.isdir(self.out) and os.listdir(self.out), "a refusal writes no report")
+
+    def test_refusals(self):
+        self.three_zips()
+        z = os.path.join(self.logs, "logs-20260110-100000.zip")
+        self.refuses("--prefix", "  ", fragment="--prefix is empty")
+        self.refuses("--scripts", "", fragment="--scripts is empty")
+        self.refuses("--since", "2026-01-01", fragment="belong to the prefix mode")
+        self.refuses("--until", "2026-01-01", fragment="belong to the prefix mode")
+        self.refuses("--prefix", "x", "--since", "2026-13-01", fragment="YYYY-MM-DD")
+        self.refuses("--prefix", "x", "--until", "yesterday", fragment="YYYY-MM-DD")
+        self.refuses("--prefix", "x", "--since", "2026-02-01", "--until", "2026-01-01", fragment="later than")
+        self.refuses("--prefix", "x", "--rules", "r.json", fragment="--rules can't be used")
+        self.refuses("--prefix", "x", "--mods", "A", fragment="--mods can't be used")
+        self.refuses("--prefix", "x", "--root", self.tmp.name, fragment="--root can't be used")
+        self.refuses("--prefix", "x", "--set-version", "A=1", fragment="--set-version can't be used")
+        self.refuses("--prefix", "x", "--max-lines", "0", fragment="--max-lines must be 1 or more")
+        self.refuses(z, "--prefix", "x", fragment="not both")
+        self.refuses(z, "--prefix", "x", "--since", "2026-01-01", logs=False, fragment="can't be used with INPUT")
+        self.refuses("--logs-dir", os.path.join(self.tmp.name, "nope"), "--prefix", "x", logs=False, fragment="is not a folder")
+        empty = os.path.join(self.tmp.name, "empty")
+        os.makedirs(empty)
+        self.refuses("--logs-dir", empty, "--prefix", "x", logs=False, fragment="There is no .zip")
+
+    def test_normal_mode_still_uses_current_folder_for_root(self):
+        z = make_zip(self.tmp.name)
+        cwd = os.getcwd()
+        root = os.path.join(self.tmp.name, "r")
+        write_rules(root, "TestMod", RULES)
+        os.chdir(root)
+        try:
+            code = plc.main([z, "--out", self.out])
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(code, 1)   # the rule file under the current folder was found and the mod fails, as before
+
+
 if __name__ == "__main__":
     unittest.main()
