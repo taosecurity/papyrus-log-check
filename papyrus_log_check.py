@@ -506,6 +506,24 @@ class Package:
             when = max(times) if times else os.path.getmtime(self.path)
         return datetime.datetime.fromtimestamp(when).strftime("%Y%m%d-%H%M%S")
 
+    def date(self):
+        """(datetime, where it came from) for the prefix mode: the name's stamp, the manifest's 'created' or the
+        file time, in stamp()'s order, but a stamp that isn't a real date and time is passed over."""
+        m = STAMP_RE.search(self.name)
+        dt = _stamp_to_dt(m.group(1).replace("-", "")) if m else None
+        if dt:
+            return dt, "name"
+        digits = re.sub(r"\D", "", str(self.manifest.get("created", "")))
+        dt = _stamp_to_dt(digits) if len(digits) >= 14 else None
+        if dt:
+            return dt, "manifest"
+        if self.kind == ZIP:
+            when = os.path.getmtime(self.path)
+        else:
+            times = [os.path.getmtime(self.entries[log["path"].lower()][0]) for log in self.logs]
+            when = max(times) if times else os.path.getmtime(self.path)
+        return datetime.datetime.fromtimestamp(when), "file time"
+
 
 # ----------------------------------------------------------------------------- rules
 
@@ -1298,8 +1316,12 @@ def _run_prefix(args, opened):
     until = parse_day(args.until, "--until") if args.until is not None else None
     if since and until and since > until:
         raise ValueError(f"--since {since} is later than --until {until}. Swap them, or give one that is on or before the other.")
-    prefixes = list(dict.fromkeys(p.strip() for p in prefixes))
-    scripts = list(dict.fromkeys(s.strip() for s in scripts))
+    # matching ignores letter case, so two spellings of one prefix are one prefix (the first spelling is kept)
+    firsts = ({}, {})
+    for seen, vals in zip(firsts, (prefixes, scripts)):
+        for v in vals:
+            seen.setdefault(v.strip().lower(), v.strip())
+    prefixes, scripts = list(firsts[0].values()), list(firsts[1].values())
 
     if args.input:
         if args.logs_dir:
@@ -1359,7 +1381,7 @@ def _run_prefix(args, opened):
                 continue
             if kind is None:
                 source_kind = pkg.kind
-                dt, how = datetime.datetime.strptime(pkg.stamp(), "%Y%m%d-%H%M%S"), "stamp"
+                dt, how = pkg.date()
             entry.update(date=f"{dt:%Y-%m-%d %H:%M:%S}", date_from=how)
             if not pkg.logs:
                 entry.update(status="no Papyrus log", logs=[], count=0, lines=[])
@@ -1399,6 +1421,11 @@ def _run_prefix(args, opened):
             if pkg is not None:
                 pkg.close()
 
+    if selected and totals["zips_skipped"] == len(selected):   # nothing was read, so NONE would mislead
+        first = next(z for z in zips if z["status"] == "skipped")
+        raise ValueError(f"none of the {len(selected)} zip(s) in the range can be read, so nothing was searched "
+                         f"(first: {first['name']}: {first['error']}). Make the zips again with the log collector, "
+                         f"or pick a range or folder that holds a zip that can be read.")
     overall = FOUND if totals["lines"] else "NONE"
     run_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     data = {"tool": TOOL, "version": VERSION, "author": AUTHOR, "license": LICENSE_NAME, "url": URL, "run": run_stamp,
@@ -1676,12 +1703,13 @@ def _main(argv):
     ap = argparse.ArgumentParser(prog=TOOL, description="papyrus-log-check checks Starfield Papyrus logs against per-mod rule files.")
     ap.add_argument("input", nargs="?",
                     help="This is the Papyrus log file, folder of Papyrus.N.log files, or zip to check. "
-                         "Without it, the newest zip in --logs-dir is checked.")
+                         "Without it, the newest zip in --logs-dir is checked (in the prefix mode, every zip there is searched).")
     ap.add_argument("--rules", action="append", metavar="FILE",
                     help="This names a rule file to check against. Repeat it, or give a comma list. "
                          "Without --rules or --mods, rule files are searched for under --root.")
     ap.add_argument("--logs-dir", metavar="FOLDER",
-                    help="This folder holds log zips, and the newest one is checked. "
+                    help="This folder holds log zips, and the newest one is checked "
+                         "(in the prefix mode, every zip in it is searched, oldest first). "
                          "The environment variable PAPYRUS_LOG_CHECK_LOGS does the same.")
     ap.add_argument("--root", default=None, metavar="FOLDER",
                     help="This folder holds mod project folders with <project>\\testplan\\logrules.json. "

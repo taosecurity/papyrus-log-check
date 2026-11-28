@@ -100,7 +100,8 @@ It prints `PASS       Example Beacon 1.0.0` and the two report paths, and exits 
   `--prefix` and `--scripts` are plain text in any letter case, and repeatable. The mode reads no rule file:
   with `--rules`, `--mods`, `--root` or `--set-version` it exits 2. The last stdout line is `RESULT: FOUND, ...`
   (exit code 0) or `RESULT: NONE, ...` (exit code 1, no line found, or no zip in the range). A zip that can't be
-  read is listed as `SKIPPED` and the run goes on. The range picks zips by their date, not lines.
+  read is listed as `SKIPPED` and the run goes on; when every zip in the range is `SKIPPED`, nothing was searched,
+  so it exits 2 with no `RESULT:` line and no report. The range picks zips by their date, not lines.
   Reports are `prefix-run<stamp>.txt` and `.json` in `--out`.
 
 - Troubleshoot a run: add `--verbose` (log on stderr) or `--log papyrus-log-check.log.txt` (log to a file).

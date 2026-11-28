@@ -28,8 +28,8 @@ FILES = [
     "papyrus_log_check.py", "README.md", "AGENTS.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md",
     "rules/papyrus-runtime-errors.logrules.json", "rules/papyrus-scripts-and-properties.logrules.json",
     "rules/papyrus-saves-and-load.logrules.json",
-    "tests/test_papyrus_log_check.py",
 ]
+FOLDERS = ["examples", "tests"]   # every tracked file in these ships (0.5.0: tests/, so the README's test commands run)
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -43,15 +43,15 @@ def committed(rel):
 
 
 def example_files():
-    """Every file git tracks in the examples folder (0.4.3: the whole folder ships, not a hand list).
+    """Every file git tracks in the FOLDERS (examples/ since 0.4.3, tests/ since 0.5.0), not a hand list.
     One listing for both build modes, so a trial build (--allow-dirty) ships the same files as a release."""
-    out = git("-c", "core.quotePath=false", "ls-files", "-z", "--", "examples").decode("utf-8")
+    out = git("-c", "core.quotePath=false", "ls-files", "-z", "--", *FOLDERS).decode("utf-8")
     return sorted(n for n in out.split("\0") if n)
 
 
 def dirty_files():
     # Untracked files never ship (example_files lists tracked files only), so they don't block a build.
-    out = git("status", "--porcelain", "--untracked-files=no", "--", *FILES, "examples").decode("utf-8", "replace")
+    out = git("status", "--porcelain", "--untracked-files=no", "--", *FILES, *FOLDERS).decode("utf-8", "replace")
     return [line[3:] for line in out.splitlines() if line.strip()]
 
 

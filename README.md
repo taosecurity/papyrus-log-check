@@ -305,20 +305,22 @@ papyrus-log-check 0.5.0 by Richard Bejtlich - MIT - https://github.com/taosecuri
 prefix mode: D:\TestLogs, 2026-11-20 to 2026-11-23
   StarfieldLogs-20261120-101500.zip  1 lines
   StarfieldLogs-20261122-190000.zip  2 lines
-Report: out\prefix-run20261127-213521.txt
-JSON:   out\prefix-run20261127-213521.json
-RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 0 errors), 1 left out by date
+Report: out\prefix-run20261127-214609.txt
+JSON:   out\prefix-run20261127-214609.json
+RESULT: FOUND, 3 lines in 2 of 2 zips (prefix [TIDE]: 2, scripts TIDE_: 1 lines in 1 errors), 1 left out by date
 ```
 
 The text report puts one line under each zip heading: the zip, the log and its line number, and the text.
 
 ```
-StarfieldLogs-20261120-101500.zip  Papyrus.0.log:2  [11/20/2026 - 10:15:09AM] info: [TIDE] quest started
-StarfieldLogs-20261122-190000.zip  Papyrus.0.log:1  [11/22/2026 - 07:00:03PM] info: [TIDE] stage 20: letter read
-StarfieldLogs-20261122-190000.zip  Papyrus.0.log:2  [11/22/2026 - 07:00:05PM] error: Cannot open store for class "TIDE_LetterScript", missing file?
+== StarfieldLogs-20261120-101500.zip (2026-11-20 10:15:00, from name): 1 lines
+StarfieldLogs-20261120-101500.zip  Papyrus.0.log:2  [10:15:09] [TIDE] quest started
+== StarfieldLogs-20261122-190000.zip (2026-11-22 19:00:00, from name): 2 lines
+StarfieldLogs-20261122-190000.zip  Papyrus.0.log:2  [19:00:03] [TIDE] stage 20: letter read
+StarfieldLogs-20261122-190000.zip  Papyrus.0.log:3  [19:00:05] error: Property Letter on script TIDE_LetterScript attached to TIDE_Errand (0100080A) cannot be bound because <NULL form> is not the right type
 ```
 
-The exit code is 0 when at least one line was found, 1 when none was (a mod that never logged, or a range that holds no zips), and 2 for a refusal such as a bad date or `--prefix` together with `--rules`. A zip that can't be read is listed as SKIPPED with the reason, and the run goes on. The last line on stdout is always the `RESULT:` line, so a script can read it.
+The exit code is 0 when at least one line was found, 1 when none was (a mod that never logged, or a range that holds no zips), and 2 for a refusal such as a bad date or `--prefix` together with `--rules`. A zip that can't be read is listed as SKIPPED with the reason, and the run goes on. When every zip in the range is SKIPPED, nothing was searched, so the run stops with exit code 2 and an error that names the first zip, and writes no report. A run that exits 0 or 1 always ends stdout with the `RESULT:` line, so a script can read it.
 
 ## Rule files
 

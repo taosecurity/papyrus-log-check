@@ -453,6 +453,9 @@ class TestQuestExample(unittest.TestCase):
             self.skipTest("not a git checkout (or no git), so there is no release build to test")
         self.assertIn("examples/example-quest.log", listed)
         self.assertIn("examples/example-quest.logrules.json", listed)
+        for rel in ("tests/test_papyrus_log_check.py", "tests/test_shared_cases.py",   # the README's test commands
+                    "tests/shared/ADOPTION.json", "tests/shared/out-paths.json"):
+            self.assertIn(rel, listed)
         with tempfile.TemporaryDirectory() as out:   # --out keeps the repo's own dist/ and build/ untouched
             r = subprocess.run([sys.executable, "-I", build, "--allow-dirty", "--out", out],
                                capture_output=True, text=True)
@@ -2423,6 +2426,38 @@ class TestPrefixMode(unittest.TestCase):
         self.assertIn("SKIPPED logs-20260110-100000.zip:", self.report())
         self.assertTrue(out.strip().splitlines()[-1].endswith("1 skipped"))
         self.assertEqual(json.loads(self.report(".json"))["zips"][0]["status"], "skipped")
+
+    def test_every_zip_unreadable_is_exit_2_not_none(self):
+        for n in ("logs-20260110-100000.zip", "logs-20260111-100000.zip"):
+            with open(os.path.join(self.logs, n), "wb") as f:
+                f.write(b"this is not a zip")
+        code, out, err = self.go("--prefix", "[MyMod]")
+        self.assertEqual(code, 2)
+        self.assertNotIn("RESULT: NONE", out)
+        self.assertIn("none of the 2 zip(s) in the range can be read", err)
+        self.assertIn("logs-20260110-100000.zip", err)
+        self.assertFalse(os.path.isdir(self.out) and any(f.startswith("prefix-run") for f in os.listdir(self.out)))
+
+    def test_input_zip_with_a_stamp_that_is_not_a_date(self):
+        path = make_collector_zip(self.tmp.name, "logs-20261399-250000.zip")
+        code, out, err = self.go(path, "--prefix", "[MyMod]", logs=False)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(self.report(".json"))["zips"][0]["date_from"], "file time")
+
+    def test_input_zip_date_source_is_named(self):
+        path = make_collector_zip(self.tmp.name, "logs-20260110-100000.zip")
+        code, _, err = self.go(path, "--prefix", "[MyMod]", logs=False)
+        self.assertEqual(code, 0, err)
+        z = json.loads(self.report(".json"))["zips"][0]
+        self.assertEqual((z["date"], z["date_from"]), ("2026-01-10 10:00:00", "name"))
+
+    def test_prefixes_in_other_letter_case_are_one_prefix(self):
+        make_collector_zip(self.logs, "logs-20260110-100000.zip")
+        code, out, _ = self.go("--prefix", "[MyMod]", "--prefix", "[mymod]", "--scripts", "MyMod_", "--scripts", "mymod_")
+        self.assertEqual(code, 0)
+        data = json.loads(self.report(".json"))
+        self.assertEqual((data["prefixes"], data["scripts"]), (["[MyMod]"], ["MyMod_"]))
+        self.assertNotIn("[mymod]", out.strip().splitlines()[-1])
 
     def test_script_error_block_shown_whole(self):
         make_collector_zip(self.logs, "logs-20260110-100000.zip")
