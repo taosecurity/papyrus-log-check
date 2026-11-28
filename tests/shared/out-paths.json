@@ -1,0 +1,32 @@
+{
+  "set": "out-paths",
+  "set_version": 1,
+  "date": "2026-11-27",
+  "about": "Output paths that must be refused before anything is opened for writing, and two that must work. Run every case against every option or setting that writes a file the user names: --out, --json, --log, --report, an export or creations-out folder, -Out and the like. A typo there must never destroy an input or a mod.",
+  "setup": "Each case runs in a new empty temporary folder T. 'files' are made in T, each holding the text 'input'. 'dirs' are made in T. 'links' are made in T: kind 'symlink' or 'hardlink', from 'from' to 'to'. 'input' is the tool's input (when the case has one), 'out' the output option, 'clean_dir' a folder the tool empties or deletes as part of its run, and 'option_kind': 'folder' an option that names an output folder rather than a file. Paths use / and are relative to T; give the tool full paths. 'only_if' names a condition (windows, case_insensitive_fs) and 'needs' a feature (symlink, hardlink): skip the case when it does not hold or the operating system refuses to make the link, and say so in the test output.",
+  "mod_file_extensions": [".esm", ".esp", ".esl", ".ba2", ".zip", ".7z", ".rar", ".strings", ".dlstrings", ".ilstrings", ".pex", ".psc", ".dll"],
+  "extension_note": "The extension list is for options that write text (reports, logs, JSON). An option whose job is to write one of these (a plugin, a zip) skips the case for its own extension and lists it under not_applicable in ADOPTION.json.",
+  "answers": {
+    "write": "The tool writes the file as normal.",
+    "refuse": "A plain refusal before anything is written: the tool's refusal exit code (usually 2) and a message that names the option and the path. The input and every other file are unchanged."
+  },
+  "never": ["a Python traceback", "a .NET unhandled exception", "an input file emptied, changed or deleted", "a file written through a link"],
+  "cases": [
+    {"id": "out-plain-new-file", "out": "report.json", "expect": "write", "why": "The control: normal use must keep working.", "round3": []},
+    {"id": "out-new-file-in-folder", "dirs": ["reports"], "out": "reports/report.json", "expect": "write", "why": "The control: a file in an existing folder.", "round3": []},
+    {"id": "out-same-file", "files": ["input.json"], "input": "input.json", "out": "input.json", "expect": "refuse", "why": "The output is the input.", "round3": ["sf-test-plan C2 (--log naming the plan emptied it before it was read)"]},
+    {"id": "out-same-file-other-case", "files": ["input.json"], "input": "input.json", "out": "INPUT.JSON", "expect": "refuse", "only_if": "case_insensitive_fs", "why": "The input in other letter case: one file on Windows.", "round3": ["papyrus-log-check C2 (--log in other letter case overwrote the input)"]},
+    {"id": "out-same-file-dot-segments", "files": ["input.json"], "dirs": ["sub"], "input": "input.json", "out": "sub/../input.json", "expect": "refuse", "why": "The input through a .. segment.", "round3": []},
+    {"id": "out-same-file-trailing-dot", "files": ["input.json"], "input": "input.json", "out": "input.json.", "expect": "refuse", "only_if": "windows", "why": "Windows drops trailing dots and spaces when it opens a file.", "round3": []},
+    {"id": "out-folder", "dirs": ["reports"], "out": "reports", "expect": "refuse", "why": "A folder is not a file name.", "round3": ["sf-mod-check C2 and A4 (the shared --out guard refuses folders)"]},
+    {"id": "out-plugin-esm", "out": "MyMod.esm", "expect": "refuse", "why": "A plugin name where a report name belongs.", "round3": ["sf-mod-check C2 (scenes --out wrote over a plugin)", "sf-mod-check A4 (patch check --json wrote over any path)"]},
+    {"id": "out-plugin-esp-upper-case", "out": "MyMod.ESP", "expect": "refuse", "why": "The extension in upper case.", "round3": ["sf-mod-check C2"]},
+    {"id": "out-plugin-esl", "out": "MyMod.esl", "expect": "refuse", "why": "A light plugin name.", "round3": ["sf-mod-check C2"]},
+    {"id": "out-archive-ba2", "out": "MyMod - Main.ba2", "expect": "refuse", "why": "An archive name.", "round3": ["sf-mod-check C2 (voice-lines --out refused only the loaded plugins)"]},
+    {"id": "out-plugin-trailing-dot", "out": "MyMod.esm.", "expect": "refuse", "only_if": "windows", "why": "Windows opens MyMod.esm.", "round3": []},
+    {"id": "out-stream-colon", "out": "report.txt:hidden", "expect": "refuse", "why": "A colon in the file name names an NTFS file stream on Windows.", "round3": ["sf-mod-check C2"]},
+    {"id": "out-symlink-to-input", "files": ["input.json"], "links": [{"kind": "symlink", "from": "report.json", "to": "input.json"}], "input": "input.json", "out": "report.json", "expect": "refuse", "needs": "symlink", "why": "The output name is a link to the input.", "round3": ["sf-test-plan C6 (new followed a symbolic link)", "StarfieldVoiceTool S1 (planted links in a shared temp folder)"]},
+    {"id": "out-hardlink-to-input", "files": ["input.json"], "links": [{"kind": "hardlink", "from": "report.json", "to": "input.json"}], "input": "input.json", "out": "report.json", "expect": "refuse", "needs": "hardlink", "why": "The output name is a second name of the input file.", "round3": []},
+    {"id": "out-inside-cleaned-folder", "dirs": ["dist", "dist/creations"], "files": ["dist/creations/keep.txt"], "clean_dir": "dist", "out": "dist/creations", "option_kind": "folder", "expect": "refuse", "applies": "Only tools that empty or delete a folder during the run (a dist or stage folder) and also write to a folder the user names.", "why": "An output folder inside a folder the tool empties loses the user's files on the next run.", "round3": ["sf-mod-build C1 (creationsOut inside dist deleted the user's files)", "sf-mod-build C2 (zip.folder inside stage)"]}
+  ]
+}

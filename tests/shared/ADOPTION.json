@@ -1,0 +1,61 @@
+{
+  "tool": "papyrus-log-check",
+  "shared_version": 1,
+  "sets": [
+    "out-paths",
+    "damaged-inputs",
+    "terminal-text",
+    "paths-and-programs"
+  ],
+  "skipped_sets": {
+    "damaged-plugins": "the tool reads no plugin headers"
+  },
+  "exit_codes": {
+    "ok": [
+      0
+    ],
+    "finding": [
+      1
+    ],
+    "refuse": [
+      2
+    ]
+  },
+  "not_applicable": {
+    "p-normal": "the tool starts no other program and looks nothing up on PATH",
+    "p-cwd-planted-path-has-real": "the tool starts no other program and looks nothing up on PATH",
+    "p-cwd-planted-only": "the tool starts no other program and looks nothing up on PATH",
+    "p-dot-entry": "the tool starts no other program and looks nothing up on PATH",
+    "p-empty-entry": "the tool starts no other program and looks nothing up on PATH",
+    "p-relative-entry": "the tool starts no other program and looks nothing up on PATH",
+    "p-quoted-entry": "the tool starts no other program and looks nothing up on PATH",
+    "p-path-order": "the tool starts no other program and looks nothing up on PATH",
+    "p-name-with-extension": "the tool starts no other program and looks nothing up on PATH",
+    "p-given-path": "the tool starts no other program and looks nothing up on PATH",
+    "p-system-tool": "the tool starts no other program and looks nothing up on PATH",
+    "c-case-twin-folders": "the tool starts no other program and looks nothing up on PATH",
+    "s-trailing-backslash": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-trailing-slash": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-mixed-slashes": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-case-windows": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-case-posix": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-dot-segments": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-double-separator": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-long-path-prefix": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-unc-trailing": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-different-folder": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-inside-true": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-inside-other-case": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-inside-prefix-trap": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "s-inside-itself": "the tool compares no stored path; --log against its inputs is the only comparison (out-paths cases)",
+    "u-unc-typed": "the tool opens no path it read from a file",
+    "u-unc-from-file": "the tool opens no path it read from a file"
+  },
+  "known_limits": {
+    "t-bidi-rlo": "C: safe() and one_line() escape controls and line breaks but not format characters (bidi marks, zero-width, U+FEFF); a hidden one in a name can reorder or hide text on one line, but no line is faked",
+    "t-bidi-isolates": "C: safe() and one_line() escape controls and line breaks but not format characters (bidi marks, zero-width, U+FEFF); a hidden one in a name can reorder or hide text on one line, but no line is faked",
+    "t-bidi-marks": "C: safe() and one_line() escape controls and line breaks but not format characters (bidi marks, zero-width, U+FEFF); a hidden one in a name can reorder or hide text on one line, but no line is faked",
+    "t-zero-width": "C: safe() and one_line() escape controls and line breaks but not format characters (bidi marks, zero-width, U+FEFF); a hidden one in a name can reorder or hide text on one line, but no line is faked",
+    "t-bom-inside": "C: safe() and one_line() escape controls and line breaks but not format characters (bidi marks, zero-width, U+FEFF); a hidden one in a name can reorder or hide text on one line, but no line is faked"
+  }
+}

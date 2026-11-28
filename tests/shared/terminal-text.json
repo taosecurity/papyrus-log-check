@@ -1,0 +1,42 @@
+{
+  "set": "terminal-text",
+  "set_version": 1,
+  "date": "2026-11-27",
+  "about": "Text from a plugin, a save, a script, a zip entry, a manifest, a log or an exception that a tool prints on one line (a finding, a report row, a log line, a RESULT line). Give each 'text' (or 'repeat': 'text' repeated 'count' times) to the tool's one-line helper, or plant it in an input name and read the tool's output. 'example_safe' is the form sf-mod-check's SafeText.OneLine gives; other escape spellings (\\x1b, \\u001b, \\U0000001b) are fine as long as the rules hold.",
+  "rules": {
+    "no_raw": "The safe form holds no character of the Unicode categories Cc (controls), Cf (format: bidi marks, zero-width characters, U+FEFF), Zl or Zp. A tab may stay when the tool's docs say so.",
+    "one_line": "The safe form holds no LF, CR, VT, FF, U+0085, U+2028 or U+2029.",
+    "visible_kept": "Every other character of the text appears in the safe form, in the same order: escaping adds text and never drops visible text.",
+    "unchanged": "The safe form is the text itself: normal names, accents, other scripts and backslashes in paths are never mangled.",
+    "unchanged_or_marked_cut": "The safe form is the text itself, or the text cut short with a visible marker (such as ... or [cut]).",
+    "bounded_time": "The safe form is made within time_limit_s seconds (no slow regex, no quadratic string building)."
+  },
+  "time_limit_s": 2,
+  "cases": [
+    {"id": "t-plain-ascii", "text": "SharedTest-Plain.esm", "rules": ["unchanged"], "example_safe": "SharedTest-Plain.esm", "round3": []},
+    {"id": "t-plain-unicode", "text": "Caf\u00e9 \u00dcn\u00efcode \u2014 \u65e5\u672c\u8a9e \u2713", "rules": ["unchanged"], "example_safe": "Caf\u00e9 \u00dcn\u00efcode \u2014 \u65e5\u672c\u8a9e \u2713", "round3": []},
+    {"id": "t-path-backslashes", "text": "C:\\Mods\\My Mod\\A.esm", "rules": ["unchanged"], "example_safe": "C:\\Mods\\My Mod\\A.esm", "round3": []},
+    {"id": "t-esc-ansi", "text": "Mod\u001b[31mRED\u001b[0m.esm", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Mod\\u001b[31mRED\\u001b[0m.esm", "round3": ["sf-papyrus-ref S2 (names from .pex files printed unescaped)"]},
+    {"id": "t-esc-clear-screen", "text": "\u001b[2J\u001b[HRESULT: OK", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "\\u001b[2J\\u001b[HRESULT: OK", "round3": []},
+    {"id": "t-nul", "text": "a\u0000b", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u0000b", "round3": []},
+    {"id": "t-backspace", "text": "Bad.esm\b\b\b\b\b\b\bGood.esm", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Bad.esm\\u0008\\u0008\\u0008\\u0008\\u0008\\u0008\\u0008Good.esm", "round3": []},
+    {"id": "t-bell", "text": "ding\u0007", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "ding\\u0007", "round3": []},
+    {"id": "t-del", "text": "a\u007fb", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u007fb", "round3": []},
+    {"id": "t-c1-csi", "text": "a\u009b31mb", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u009b31mb", "round3": []},
+    {"id": "t-c1-nel", "text": "a\u0085b", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u0085b", "round3": []},
+    {"id": "t-lf-fake-result", "text": "Mod.esm\nRESULT: OK", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Mod.esm\\nRESULT: OK", "round3": ["papyrus-log-check C1 (a newline in a manifest value added a fake PASS line)", "sf-load-order S1 (a newline in a plugin name)"]},
+    {"id": "t-cr-overwrite", "text": "Mod.esm\rRESULT: OK", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Mod.esm\\rRESULT: OK", "round3": ["papyrus-log-check C1"]},
+    {"id": "t-crlf", "text": "a\r\nb", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\r\\nb", "round3": []},
+    {"id": "t-vt-ff", "text": "a\u000b\u000cb", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u000b\\u000cb", "round3": []},
+    {"id": "t-tab", "text": "a\tb", "rules": ["one_line", "visible_kept"], "example_safe": "a\\tb", "note": "A tab may stay or be escaped.", "round3": []},
+    {"id": "t-u2028", "text": "a\u2028b", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u2028b", "round3": ["papyrus-log-check C1"]},
+    {"id": "t-u2029", "text": "a\u2029b", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u2029b", "round3": []},
+    {"id": "t-bidi-rlo", "text": "Evil\u202eMSE.esm", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Evil\\u202eMSE.esm", "round3": ["sf-mod-check B2 (a bidi character in a master name reordered the line)"]},
+    {"id": "t-bidi-isolates", "text": "a\u2066b\u2067c\u2068d\u2069e", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u2066b\\u2067c\\u2068d\\u2069e", "round3": ["sf-mod-check B2"]},
+    {"id": "t-bidi-marks", "text": "a\u200eb\u200fc\u061cd", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "a\\u200eb\\u200fc\\u061cd", "round3": ["sf-mod-check B2"]},
+    {"id": "t-zero-width", "text": "Plu\u200bgin\u200d.esm\u2060", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "Plu\\u200bgin\\u200d.esm\\u2060", "round3": []},
+    {"id": "t-bom-inside", "text": "\ufeffPlugin.esm", "rules": ["no_raw", "one_line", "visible_kept"], "example_safe": "\\ufeffPlugin.esm", "round3": []},
+    {"id": "t-long-line", "repeat": {"text": "A", "count": 1000000}, "rules": ["unchanged_or_marked_cut", "bounded_time"], "example_safe": null, "round3": []},
+    {"id": "t-many-escapes", "repeat": {"text": "\u001b", "count": 100000}, "rules": ["no_raw", "one_line", "bounded_time"], "example_safe": null, "round3": []}
+  ]
+}

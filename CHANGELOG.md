@@ -6,6 +6,8 @@
 
 - With no plugins.txt, the report now says the checks on `.esm` plugins are skipped. It used to say every rule file is checked.
 - A rule's `"always": null` is refused with the same message as `"always": "false"` (exit code 2): `always` must be true or false without quotes.
+- `--log` now refuses more names that are not a log: a file name ending in `.ba2`, `.pex`, `.psc`, `.dll`, `.7z`, `.rar` or a strings file type, a name with trailing dots or spaces after such an ending, a name with a colon (an NTFS data stream), and a folder (the message names `--log`). It used to write over those or fail with a bare "Permission denied".
+- The shared test cases of the PMT (output paths, damaged input files, terminal text) now run in the tests and in CI.
 
 ## 0.4.4 (2026-11-27)
 

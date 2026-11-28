@@ -1,0 +1,16 @@
+{
+  "about": "Copy this file to ADOPTION.json in the same folder and fill it in. ADOPTION.json is the tool's own file: the drift check never compares it with the house copy, but it checks its shape. Every other file in this folder is a copy of the house shared-tests folder and is never edited here.",
+  "tool": "<tool name, as in repos.json>",
+  "shared_version": 1,
+  "sets": ["out-paths", "damaged-inputs", "damaged-plugins", "terminal-text", "paths-and-programs"],
+  "skipped_sets": {
+    "<set id>": "<one line: why the set does not apply to this tool>"
+  },
+  "exit_codes": {"ok": [0], "finding": [1], "refuse": [2]},
+  "not_applicable": {
+    "<case id>": "<one line: why the case can't arise in this tool, such as 'the option's job is to write a .zip'>"
+  },
+  "known_limits": {
+    "<case id>": "<kind letter C, E or F, a colon, and one line: why it is left; the same line goes in the README's Known limits>"
+  }
+}

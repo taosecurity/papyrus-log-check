@@ -1,0 +1,198 @@
+{
+  "set": "damaged-inputs",
+  "set_version": 1,
+  "date": "2026-11-27",
+  "about": "Damaged input files written by make_inputs.py. Feed each json-* file to every place the tool reads JSON (settings, rules, baselines, caches, lock files, manifests, hook input) and each text-* file to every line list it reads (Plugins.txt and the like). Then apply the mutations to the tool's own valid sample.",
+  "answers": {
+    "read": "The tool reads the file as normal and gives its normal answer.",
+    "refuse": "A plain refusal: the tool's refusal exit code (usually 2 or 3) and a message that names the file. A guard (a hook that allows or blocks) fails closed: it blocks.",
+    "read_or_refuse": "Either answer; 'preferred' says which is better when both are possible."
+  },
+  "never": [
+    "a Python traceback",
+    "a .NET unhandled exception or stack overflow",
+    "a PowerShell error record instead of the tool's own message",
+    "an exit code of 128 or more, or a negative one",
+    "running past the case's time limit"
+  ],
+  "time_limit_s": 10,
+  "files": [
+    {
+      "file": "json-root-array.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "Wrong root type: a list where the tool expects an object.",
+      "round3": [
+        "StarfieldVoiceTool C5 (a soundbank JSON whose root isn't an object broke the Sound Effects list)",
+        "sf-papyrus-ref C9 (a cache of the wrong shape crashed every command)"
+      ]
+    },
+    {
+      "file": "json-root-string.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "Wrong root type: a string.",
+      "round3": []
+    },
+    {
+      "file": "json-root-number.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "Wrong root type: a number.",
+      "round3": []
+    },
+    {
+      "file": "json-root-null.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "null where the root object belongs.",
+      "round3": [
+        "BuildKit C7 (a lock file holding null crashed)"
+      ]
+    },
+    {
+      "file": "json-deep-arrays.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "20,000 nested lists. Python's json raises RecursionError, which must become a plain refusal.",
+      "round3": [
+        "papyrus-log-check C5 (a manifest nested 100,000 deep gave a RecursionError traceback)"
+      ]
+    },
+    {
+      "file": "json-deep-objects.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "20,000 nested objects.",
+      "round3": [
+        "papyrus-log-check C5"
+      ]
+    },
+    {
+      "file": "json-bom-utf8.json",
+      "kind": "json",
+      "answer": "read_or_refuse",
+      "preferred": "read",
+      "why": "A UTF-8 byte-order mark before an empty object (Windows PowerShell 5 and some editors write one).",
+      "round3": [
+        "sf-test-plan C5 (a --pins file with a BOM was refused as not valid JSON)"
+      ]
+    },
+    {
+      "file": "json-utf16le-bom.json",
+      "kind": "json",
+      "answer": "read_or_refuse",
+      "preferred": "read",
+      "why": "UTF-16 with a byte-order mark (what Windows PowerShell 5's > writes). Read it, or refuse naming the encoding.",
+      "round3": [
+        "sf-test-plan C5"
+      ]
+    },
+    {
+      "file": "json-huge-integer.json",
+      "kind": "json",
+      "answer": "read_or_refuse",
+      "why": "A 5,000-digit number. Python 3.11 and later refuse to turn more than 4,300 digits into an int (ValueError).",
+      "round3": [
+        "sf-load-order C6 (a rules file with an integer over 4,300 digits gave a traceback)"
+      ]
+    },
+    {
+      "file": "json-empty.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "A zero-length file.",
+      "round3": []
+    },
+    {
+      "file": "json-cut-short.json",
+      "kind": "json",
+      "answer": "refuse",
+      "why": "A file cut short in the middle of a list (a copy that stopped, a full disk).",
+      "round3": []
+    },
+    {
+      "file": "json-not-utf8.json",
+      "kind": "json",
+      "answer": "read_or_refuse",
+      "why": "Bytes that are not UTF-8 inside a string. A UnicodeDecodeError traceback is the bug; a refusal or a read with replacement characters is fine.",
+      "round3": []
+    },
+    {
+      "file": "json-case-twin-keys.json",
+      "kind": "json",
+      "answer": "read_or_refuse",
+      "must": "A tool that keys a map by name ignoring case must refuse or warn naming both keys, never merge them silently.",
+      "why": "Two keys that differ only in case.",
+      "round3": [
+        "BuildKit C7 (a hand-merged lock file with case twins collapsed quietly)"
+      ]
+    },
+    {
+      "file": "text-bom-utf8.txt",
+      "kind": "text",
+      "answer": "read",
+      "first_line": "SharedTest-Plain.esm",
+      "must": "The first line is SharedTest-Plain.esm; U+FEFF never becomes part of a name.",
+      "why": "A line list (such as Plugins.txt) saved as UTF-8 with a BOM.",
+      "round3": []
+    },
+    {
+      "file": "text-utf16le-bom.txt",
+      "kind": "text",
+      "answer": "read_or_refuse",
+      "first_line": "SharedTest-Plain.esm",
+      "why": "A line list saved as UTF-16 (Notepad's 'Unicode', PowerShell 5's >).",
+      "round3": []
+    },
+    {
+      "file": "text-nul-bytes.txt",
+      "kind": "text",
+      "answer": "read_or_refuse",
+      "why": "NUL bytes inside a line.",
+      "round3": []
+    },
+    {
+      "file": "text-empty.txt",
+      "kind": "text",
+      "answer": "read",
+      "why": "An empty line list is valid: nothing is listed.",
+      "round3": []
+    }
+  ],
+  "mutations": {
+    "how": "Take one valid file the tool reads (from its own tests). For each mutation below and each key at depth 1 and 2, make one copy with that one change. Expect a normal read when the tool's docs say the key is optional, else a plain refusal that names the file. Never a traceback.",
+    "list": [
+      {
+        "id": "m-null-value",
+        "do": "replace the value with null",
+        "round3": [
+          "sf-test-plan C9 (\"r\": null)",
+          "BuildKit C7"
+        ]
+      },
+      {
+        "id": "m-empty-object",
+        "do": "replace the value with {}",
+        "round3": [
+          "sf-patch-day C4 (a baseline master entry {} gave KeyError)"
+        ]
+      },
+      {
+        "id": "m-wrong-type-string",
+        "do": "replace the value with the string \"12\" (or \"false\" for a true/false value)",
+        "round3": [
+          "sf-patch-day R3 (size as \"12\" gave ValueError)",
+          "papyrus-log-check C4 (\"always\": \"false\" counted as true)"
+        ]
+      },
+      {
+        "id": "m-drop-key",
+        "do": "remove the key",
+        "round3": [
+          "sf-patch-day R3 (a record entry with no formid gave KeyError)"
+        ]
+      }
+    ]
+  }
+}

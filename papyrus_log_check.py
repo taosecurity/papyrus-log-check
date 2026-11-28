@@ -92,6 +92,11 @@ def safe(text):
     return _CONTROL_RE.sub(lambda m: f"\\x{ord(m.group(0)):02X}", str(text))
 
 
+# 0.5.0: file types a log must never be written over (the shared out-paths set: plugins, archives, zips, scripts, DLLs).
+_LOG_BAD_ENDINGS = (".zip", ".7z", ".rar", ".json", ".esm", ".esp", ".esl", ".ba2", ".pex", ".psc", ".dll",
+                    ".strings", ".dlstrings", ".ilstrings")
+
+
 class Log:
     """The troubleshooting log (0.3.0): what was read, what was decided and why a run stopped. Off unless asked for:
     --verbose prints it on stderr ("log: ..."), --log FILE writes it to FILE. The report and the summary on stdout
@@ -133,8 +138,13 @@ class Log:
             i_n = same(i)
             if full_n == i_n or (os.path.isdir(i) and full_n.startswith(os.path.join(i_n, ""))):
                 raise ValueError(f"--log {path} is inside the input {i}; give the log a place of its own, e.g. --log papyrus-log-check.log.txt")
-        if PAPYRUS_RE.search(base) or base.endswith((".zip", ".json", ".esm", ".esp", ".esl")):
+        name = base.rstrip(". ")  # Windows drops trailing dots and spaces, so "x.esm." is "x.esm"
+        if PAPYRUS_RE.search(name) or name.endswith(_LOG_BAD_ENDINGS):
             raise ValueError(f"--log {path} looks like an input file; give it a .txt name, e.g. --log papyrus-log-check.log.txt")
+        if ":" in base:  # a colon in the file name (past a drive letter) names an NTFS data stream, not a file
+            raise ValueError(f"--log {path} has a colon in the file name; give --log a plain .txt name, e.g. --log papyrus-log-check.log.txt")
+        if os.path.isdir(full):
+            raise ValueError(f"--log {path} is a folder; give --log a file name, e.g. --log papyrus-log-check.log.txt")
         folder = os.path.dirname(full)
         if not os.path.isdir(folder):
             raise ValueError(f"--log {path}: the folder {folder} doesn't exist. Make it, or give --log a path in a folder that exists.")

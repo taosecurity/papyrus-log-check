@@ -1,0 +1,43 @@
+{
+  "set": "paths-and-programs",
+  "set_version": 1,
+  "date": "2026-11-27",
+  "about": "Two parts. 'lookup': how a tool finds another program it starts (sf-mod-check, 7z, taskkill, the Papyrus compiler). 'spellings': pairs of path spellings a tool compares (a saved game folder against the one in use, an output folder against a folder it cleans). 'policy': where a path came from decides whether the tool may open it.",
+  "lookup_setup": "Each case runs in a new empty temporary folder T, with the current folder set to T/cwd. 'cwd_files' are made in T/cwd. 'path' is the PATH list, in order: {\"dir\": \"bin1\", \"files\": [...]} is the full path of T/bin1, made with those files; {\"dir\": \"Program Files/bin2\", \"quoted\": true} is that full path in double quotes; {\"entry\": \".\"} and {\"entry\": \"\"} are written into PATH as they are; {\"relative\": \"relbin\"} writes the relative name relbin into PATH (T/cwd/relbin is made with 'files'). The file name $PROG means the program as the platform names it: tool.exe on Windows, tool (marked executable) elsewhere. 'query' is the name the tool asks for; $PROG there means tool on every platform. 'expect': {\"found\": \"<dir>\"} means the program in that PATH folder, {\"found\": null} means not found (the tool then says it is missing, naming the program, and never starts anything), {\"given\": \"<path>\"} means the path the user gave, used as given.",
+  "lookup": [
+    {"id": "p-normal", "path": [{"dir": "bin1", "files": ["$PROG"]}], "query": "$PROG", "expect": {"found": "bin1"}, "why": "The control: a program on PATH is found.", "round3": []},
+    {"id": "p-cwd-planted-path-has-real", "cwd_files": ["$PROG"], "path": [{"dir": "bin1", "files": ["$PROG"]}], "query": "$PROG", "expect": {"found": "bin1"}, "why": "A same-named program planted in the current folder must not win over PATH.", "round3": ["sf-load-order C3 (shutil.which found a planted sf-mod-check.exe or 7z.exe in the current folder)"]},
+    {"id": "p-cwd-planted-only", "cwd_files": ["$PROG"], "path": [{"dir": "bin1", "files": []}], "query": "$PROG", "expect": {"found": null}, "why": "With the program only in the current folder, it is not found.", "round3": ["sf-load-order C3"]},
+    {"id": "p-dot-entry", "cwd_files": ["$PROG"], "path": [{"entry": "."}], "query": "$PROG", "expect": {"found": null}, "why": "A . entry in PATH means the current folder: never searched.", "round3": ["sf-load-order C3"]},
+    {"id": "p-empty-entry", "cwd_files": ["$PROG"], "path": [{"entry": ""}, {"dir": "bin1", "files": []}], "query": "$PROG", "expect": {"found": null}, "why": "An empty PATH entry also means the current folder.", "round3": ["sf-load-order C3"]},
+    {"id": "p-relative-entry", "path": [{"relative": "relbin", "files": ["$PROG"]}], "query": "$PROG", "expect": {"found": null}, "why": "A relative PATH entry depends on the current folder: never searched.", "round3": []},
+    {"id": "p-quoted-entry", "path": [{"dir": "Program Files/bin2", "quoted": true, "files": ["$PROG"]}], "query": "$PROG", "expect": {"found": "Program Files/bin2"}, "why": "A quoted PATH entry with a space is normal on Windows.", "round3": []},
+    {"id": "p-path-order", "path": [{"dir": "bin1", "files": ["$PROG"]}, {"dir": "bin2", "files": ["$PROG"]}], "query": "$PROG", "expect": {"found": "bin1"}, "why": "The first PATH folder that holds the program wins.", "round3": []},
+    {"id": "p-name-with-extension", "only_if": "windows", "path": [{"dir": "bin1", "files": ["tool.exe"]}], "query": "tool.exe", "expect": {"found": "bin1"}, "why": "A name that already has a PATHEXT extension is tried as it is.", "round3": []},
+    {"id": "p-given-path", "path": [{"dir": "bin1", "files": []}, {"dir": "bin2", "files": ["$PROG"]}], "query": "{T}/bin2/$PROG", "expect": {"given": "bin2"}, "why": "A path with a folder part is the user's choice: used as given, never searched on PATH.", "round3": []},
+    {"id": "p-system-tool", "only_if": "windows", "kind": "system_tool", "query": "taskkill.exe", "cwd_files": ["taskkill.exe"], "expect": {"system32": true}, "why": "A Windows system program is started by its full path under %SystemRoot%\\System32, never by PATH or the current folder.", "round3": ["sf-load-order C3 (taskkill was found the same way)"]}
+  ],
+  "spellings": [
+    {"id": "s-trailing-backslash", "flavor": "windows", "relation": "same", "a": "C:\\Games\\Starfield\\", "b": "C:\\Games\\Starfield", "expect": true, "round3": ["StarfieldVoiceTool C2 (a saved game path with a trailing \\ never matched, so the index rebuilt on every play)"]},
+    {"id": "s-trailing-slash", "flavor": "windows", "relation": "same", "a": "C:/Games/Starfield/", "b": "C:\\Games\\Starfield", "expect": true, "round3": ["StarfieldVoiceTool C2"]},
+    {"id": "s-mixed-slashes", "flavor": "windows", "relation": "same", "a": "C:\\Games/Starfield\\Data", "b": "C:\\Games\\Starfield\\Data", "expect": true, "round3": []},
+    {"id": "s-case-windows", "flavor": "windows", "relation": "same", "a": "C:\\GAMES\\starfield", "b": "C:\\Games\\Starfield", "expect": true, "round3": ["papyrus-log-check C2"]},
+    {"id": "s-case-posix", "flavor": "posix", "relation": "same", "a": "/home/user/Starfield", "b": "/home/user/starfield", "expect": false, "round3": ["sf-patch-day R1 (two case spellings of one folder on Linux)"]},
+    {"id": "s-dot-segments", "flavor": "windows", "relation": "same", "a": "C:\\Games\\Starfield\\.\\Data\\..\\Data", "b": "C:\\Games\\Starfield\\Data", "expect": true, "round3": []},
+    {"id": "s-double-separator", "flavor": "windows", "relation": "same", "a": "C:\\Games\\\\Starfield", "b": "C:\\Games\\Starfield", "expect": true, "round3": []},
+    {"id": "s-long-path-prefix", "flavor": "windows", "relation": "same", "a": "\\\\?\\C:\\Games\\Starfield", "b": "C:\\Games\\Starfield", "expect": true, "round3": []},
+    {"id": "s-unc-trailing", "flavor": "windows", "relation": "same", "a": "\\\\server\\share\\Starfield\\", "b": "\\\\server\\share\\Starfield", "expect": true, "round3": []},
+    {"id": "s-different-folder", "flavor": "windows", "relation": "same", "a": "C:\\Games\\Starfield", "b": "C:\\Games\\Starfield2", "expect": false, "round3": []},
+    {"id": "s-inside-true", "flavor": "windows", "relation": "inside", "a": "C:\\Mod\\dist\\creations", "b": "C:\\Mod\\dist", "expect": true, "round3": ["sf-mod-build C1 (creationsOut inside dist)"]},
+    {"id": "s-inside-other-case", "flavor": "windows", "relation": "inside", "a": "c:\\mod\\DIST\\creations\\", "b": "C:\\Mod\\dist", "expect": true, "round3": ["sf-mod-build C1"]},
+    {"id": "s-inside-prefix-trap", "flavor": "windows", "relation": "inside", "a": "C:\\Mod\\dist2\\creations", "b": "C:\\Mod\\dist", "expect": false, "round3": ["sf-patch-day C6 (a substring test on xboxgames)"]},
+    {"id": "s-inside-itself", "flavor": "windows", "relation": "inside", "a": "C:\\Mod\\dist\\", "b": "C:\\Mod\\dist", "expect": true, "note": "A folder counts as inside itself, so an output folder equal to a cleaned folder is refused too.", "round3": ["sf-mod-build C2 (zip.folder at stage)"]}
+  ],
+  "case_twins": [
+    {"id": "c-case-twin-folders", "only_if": "case_sensitive_fs", "dirs": ["Data/SFSE/Plugins", "Data/sfse/Plugins"], "look_for": "Data/SFSE/Plugins", "expect": "warn_both", "why": "Two folders whose names differ only in case: name both and say which one is used, never pick one silently.", "round3": ["sf-patch-day R1"]}
+  ],
+  "policy": [
+    {"id": "u-unc-typed", "source": "command line", "path": "\\\\server\\share\\Starfield\\Data", "expect": "use_as_given", "why": "A network path the user typed is the user's choice.", "round3": []},
+    {"id": "u-unc-from-file", "source": "a file the tool reads (a plan, a manifest, a cache, an MCP request)", "path": "\\\\server\\share\\x.zip", "expect": "refuse_or_ask", "why": "A network path read from a file is not opened without the user's say: refuse it, or warn and skip it, naming the file it came from.", "round3": ["sf-test-plan S1 (a plan's UNC zip: path opened an SMB share)", "sf-papyrus-ref S1 (an MCP client can name a UNC path)"]}
+  ]
+}

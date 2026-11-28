@@ -400,9 +400,10 @@ Reports quote lines from your logs (and, if your log zip has a collector's manif
 
 ```
 python -I tests/test_papyrus_log_check.py
+python -I tests/test_shared_cases.py
 ```
 
-The tests build small made-up logs, folders and zips, so no game files are needed. The GitHub workflow runs them on Windows and Linux.
+The tests build small made-up logs, folders and zips, so no game files are needed. The second file runs the shared test cases in `tests/shared` (output paths, damaged input files and text that must not reach the terminal raw). The GitHub workflow runs them on Windows and Linux.
 
 ## Found a mistake?
 

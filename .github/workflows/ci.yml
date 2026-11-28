@@ -37,6 +37,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Unit tests
         run: python -I tests/test_papyrus_log_check.py -v
+      - name: Shared test sets
+        run: python -I tests/test_shared_cases.py -v
       - name: Example from the README
         run: python -I papyrus_log_check.py examples/Papyrus.0.log --rules examples/example-beacon.logrules.json --out out
       - name: Release zip builds
