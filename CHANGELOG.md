@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+### What's new
+
+- With no plugins.txt, the report now says the checks on `.esm` plugins are skipped. It used to say every rule file is checked.
+- A rule's `"always": null` is refused with the same message as `"always": "false"` (exit code 2): `always` must be true or false without quotes.
+
 ## 0.4.4 (2026-11-27)
 
 ### What's new

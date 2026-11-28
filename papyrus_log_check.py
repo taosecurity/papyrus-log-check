@@ -992,7 +992,7 @@ def text_report(data, max_lines):
     for log in p["logs"]:
         out.append(f"  {log['name']}: {log['count']} lines, {log['first']} to {log['last']}")
     if p["plugins_txt"] is False:
-        out.append("  There is no plugins.txt, so plugin checks are skipped and every rule file is checked.")
+        out.append("  There is no plugins.txt, so the checks on .esm plugins are skipped.")
     out.append("")
     out.append("Summary")
     for r in data["mods"]:

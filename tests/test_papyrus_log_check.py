@@ -236,6 +236,15 @@ class TestRun(Base):
         data = json.loads(read([os.path.join(self.out, f) for f in os.listdir(self.out) if f.endswith(".json")][0]))
         self.assertEqual(data["mods"][0]["plugin_state"], "unknown")
 
+    def test_no_plugins_txt_report_says_esm_checks_skipped(self):
+        z = make_zip(self.dir, plugins=None)
+        plc.main([z, "--root", self.root, "--out", self.out])
+        txt = [os.path.join(self.out, f) for f in os.listdir(self.out) if f.endswith(".txt")]
+        self.assertTrue(txt)
+        text = read(txt[0])
+        self.assertIn("There is no plugins.txt, so the checks on .esm plugins are skipped.", text)
+        self.assertNotIn("every rule file is checked", text)
+
     def test_newest_zip_any_name(self):
         make_zip(self.dir, name="logs-a.zip")
         make_zip(self.dir, name="mylogs-20260105-000000.zip")
